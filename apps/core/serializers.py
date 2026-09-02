@@ -132,7 +132,7 @@ class UserRoleSerializer(serializers.ModelSerializer):
         model = UserRole
         fields = (
             "id", "user", "role", "role_name", "branch", "valid_from", "valid_to",
-            "assigned_by", "permission_codes",
+            "assigned_by", "is_active", "permission_codes",
         )
         read_only_fields = ("assigned_by",)
 

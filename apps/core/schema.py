@@ -18,3 +18,15 @@ class CookieOrHeaderJWTScheme(OpenApiAuthenticationExtension):
                 "name": "access_token",
             },
         ]
+
+
+class ERPApiKeyScheme(OpenApiAuthenticationExtension):
+    target_class = "apps.erp.api_keys.ERPApiKeyAuthentication"
+    name = "erpApiKeyAuth"
+
+    def get_security_definition(self, auto_schema):
+        return {
+            "type": "apiKey",
+            "in": "header",
+            "name": "X-ERP-API-Key",
+        }

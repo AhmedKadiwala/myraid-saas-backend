@@ -9,7 +9,7 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from .api import APIView
 from .authentication import enforce_csrf
 from .models import TenantMembership, User
-from .serializers import SignupSerializer, UserSerializer
+from .serializers import UserSerializer
 from .services import enforce_tenant_admin, ensure_plan_limit, resolve_tenant
 
 
@@ -29,6 +29,8 @@ class LoginView(APIView):
     authentication_classes = []
 
     def post(self, request):
+        if not settings.ERP_ALLOW_PASSWORD_LOGIN:
+            return Response({"message":"Sign in with phone number and OTP."},status=status.HTTP_410_GONE)
         email = request.data.get("email")
         password = request.data.get("password")
         if not email or not password or len(password) < 6:
@@ -117,16 +119,24 @@ class LogoutView(APIView):
 
 class SignupView(APIView):
     def post(self, request):
+        from apps.erp.otp import normalize_phone
+        import uuid
         tenant = enforce_tenant_admin(request)
         ensure_plan_limit(
             tenant, "users",
             TenantMembership.objects.filter(tenant=tenant, is_active=True).count(),
         )
-        serializer = SignupSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        user = serializer.save()
+        phone=normalize_phone(request.data.get("phone"));digits=phone[-10:]
+        if User.objects.filter(phone_e164=phone).exists() or User.objects.filter(phone=digits).exists():
+            return Response({"message":"A user already has this phone number."},status=400)
+        first=str(request.data.get("first_name","")).strip();last=str(request.data.get("last_name","")).strip()
+        if not first:return Response({"message":"First name is required."},status=400)
+        department=request.data.get("department",User.Department.SALES)
+        if department not in User.Department.values:return Response({"message":"Choose a valid department."},status=400)
+        user=User.objects.create_user(email=f"{digits}.{uuid.uuid4().hex[:8]}@phone.myraid.invalid",phone=phone,password=None,first_name=first,last_name=last,department=department,quotation_code=request.data.get("quotation_code") or None)
+        user.set_unusable_password();user.save(update_fields=["password"])
         TenantMembership.objects.create(tenant=tenant, user=user)
-        return Response({"message": "Account created successfully"})
+        return Response({"message": "User added. They can sign in with phone OTP."})
 
 
 class UserInfoView(APIView):
@@ -145,7 +155,7 @@ class EditUserView(APIView):
         if not TenantMembership.objects.filter(tenant=tenant, user_id=user_id).exists():
             return Response({"message": "User not found"}, status=404)
         user = User.objects.get(pk=user_id)
-        serializer = UserSerializer(user, data=request.data)
+        serializer = UserSerializer(user, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
         serializer.save()
         return Response({"message": "User details edited successfully"})
@@ -153,6 +163,7 @@ class EditUserView(APIView):
 
 class ChangePasswordView(APIView):
     def post(self, request):
+        return Response({"message":"Myraid uses phone OTP. Password login is disabled."},status=410)
         old_password = request.data.get("old_password", "")
         new_password = request.data.get("new_password", "")
         if len(new_password) < 6:
@@ -168,6 +179,7 @@ class ChangePasswordView(APIView):
 
 class ResetPasswordView(APIView):
     def post(self, request, user_id):
+        return Response({"message":"Myraid uses phone OTP. There is no password to reset."},status=410)
         tenant = enforce_tenant_admin(request)
         membership = TenantMembership.objects.filter(
             tenant=tenant, user_id=user_id, is_active=True

@@ -42,11 +42,13 @@ class User(AbstractUser):
     username = models.CharField(max_length=254, blank=True)
     email = models.EmailField(unique=True)
     phone = models.CharField(max_length=15, unique=True)
+    phone_e164 = models.CharField(max_length=16, unique=True, null=True, blank=True)
     quotation_code = models.CharField(max_length=30, blank=True, null=True)
     department = models.CharField(
         max_length=20, choices=Department.choices, default=Department.SALES
     )
     platform_admin = models.BooleanField(default=False)
+    phone_verified_at = models.DateTimeField(null=True, blank=True)
 
     USERNAME_FIELD = "email"
     REQUIRED_FIELDS = ["phone"]
@@ -54,6 +56,13 @@ class User(AbstractUser):
 
     def save(self, *args, **kwargs):
         self.username = self.email
+        digits = "".join(ch for ch in self.phone if ch.isdigit())
+        if self.phone.startswith("+") and 8 <= len(digits) <= 15:
+            self.phone_e164 = "+" + digits
+        elif len(digits) == 10:
+            self.phone_e164 = "+91" + digits
+        elif digits:
+            self.phone_e164 = "+" + digits
         super().save(*args, **kwargs)
 
 
@@ -97,7 +106,7 @@ class Tenant(TimeStampedModel):
 
 class TenantSettings(models.Model):
     tenant = models.OneToOneField(Tenant, related_name="settings", on_delete=models.CASCADE)
-    timezone = models.CharField(max_length=64, default="Asia/Calcutta")
+    timezone = models.CharField(max_length=64, default="Asia/Kolkata")
     currency = models.CharField(max_length=3, default="INR")
     date_format = models.CharField(max_length=30, default="dd/MM/yyyy")
     quotation_prefix = models.CharField(max_length=20, default="QT")
@@ -207,6 +216,7 @@ class UserRole(TimeStampedModel):
         User, null=True, blank=True, related_name="role_assignments_made",
         on_delete=models.SET_NULL
     )
+    is_active = models.BooleanField(default=True)
 
     class Meta:
         constraints = [
@@ -219,6 +229,7 @@ class UserRole(TimeStampedModel):
                 fields=["tenant", "user", "role", "branch", "valid_from"],
                 name="unique_user_role_scope_window",
             ),
+            models.UniqueConstraint(fields=["tenant","user"],condition=Q(is_active=True),name="one_active_role_per_company_user"),
         ]
         indexes = [
             models.Index(fields=["tenant", "user", "branch"]),
@@ -226,8 +237,8 @@ class UserRole(TimeStampedModel):
         ]
 
     def clean(self):
-        if self.branch_id and self.branch.tenant_id != self.tenant_id:
-            raise ValidationError("Branch must belong to the assignment tenant.")
+        if self.branch_id:
+            raise ValidationError("Roles are assigned per company, not per branch. Switch company to use a different role.")
         if self.role.tenant_id not in (None, self.tenant_id):
             raise ValidationError("Role belongs to another tenant.")
         if self.role.tenant_id is None and not self.role.approved_for_tenant_assignment:
@@ -634,4 +645,3 @@ class Drawing(TenantScopedModel):
         User, related_name="drawings", on_delete=models.PROTECT
     )
     show_in_order = models.BooleanField(default=False)
-

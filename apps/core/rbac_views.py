@@ -129,28 +129,18 @@ class UserRoleListCreateView(APIView):
         ).first()
         if not role:
             return Response({"message": "Role is not assignable in this tenant"}, status=400)
-        branch = None
         if request.data.get("branch"):
-            branch = Branch.objects.filter(
-                pk=request.data["branch"], tenant=tenant, is_active=True
-            ).first()
-            if not branch:
-                return Response({"message": "Invalid branch scope"}, status=400)
-        assignment = UserRole(
-            tenant=tenant,
-            user_id=user_id,
-            role=role,
-            branch=branch,
-            valid_from=request.data.get("valid_from"),
-            valid_to=request.data.get("valid_to"),
-            assigned_by=request.user,
-        )
-        assignment.full_clean()
-        assignment.save()
+            return Response({"message":"Roles are assigned per company, not branch."},status=400)
+        branch = None
+        with transaction.atomic():
+            previous=list(UserRole.objects.select_for_update().filter(tenant=tenant,user_id=user_id,is_active=True).values("id","role__name"))
+            UserRole.objects.filter(tenant=tenant,user_id=user_id,is_active=True).update(is_active=False)
+            assignment = UserRole(tenant=tenant,user_id=user_id,role=role,branch=branch,assigned_by=request.user,is_active=True)
+            assignment.full_clean();assignment.save()
         audit(
             actor=request.user, tenant=tenant, action="user_role.assigned",
             resource=assignment, after=UserRoleSerializer(assignment).data,
-            request=request,
+            request=request,before={"previous_roles":previous},
         )
         return Response(UserRoleSerializer(assignment).data, status=201)
 
@@ -166,7 +156,8 @@ class UserRoleDetailView(APIView):
             actor=request.user, tenant=tenant, action="user_role.revoked",
             resource=assignment, before=before, request=request,
         )
-        assignment.delete()
+        assignment.is_active=False
+        assignment.save(update_fields=["is_active","updated_at"])
         return Response(status=204)
 
 

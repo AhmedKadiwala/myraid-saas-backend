@@ -56,14 +56,14 @@ class TenantRBACTestCase(TestCase):
         RolePermission.objects.create(role=role, permission=permission)
         return role
 
-    def test_multiple_roles_union_permissions(self):
+    def test_one_active_role_per_company_uses_current_assignment(self):
         viewer = self.role("viewer", self.permission_view, self.a)
         creator = self.role("creator", self.permission_add, self.a)
-        UserRole.objects.create(tenant=self.a, user=self.user, role=viewer)
+        UserRole.objects.create(tenant=self.a, user=self.user, role=viewer, is_active=False)
         UserRole.objects.create(tenant=self.a, user=self.user, role=creator)
         self.assertEqual(
             effective_permissions(self.user, self.a),
-            {"lead.view", "lead.add"},
+            {"lead.add"},
         )
 
     def test_temporary_roles_respect_validity_window(self):
@@ -76,18 +76,12 @@ class TenantRBACTestCase(TestCase):
         )
         self.assertNotIn("lead.add", effective_permissions(self.user, self.a))
 
-    def test_branch_scoped_role_does_not_leak(self):
+    def test_role_assignment_is_company_scoped_not_branch_scoped(self):
         role = self.role("branch-viewer", self.permission_view, self.a)
-        UserRole.objects.create(
+        assignment=UserRole(
             tenant=self.a, user=self.user, role=role, branch=self.branch_a
         )
-        self.assertIn(
-            "lead.view", effective_permissions(self.user, self.a, self.branch_a)
-        )
-        self.assertNotIn(
-            "lead.view", effective_permissions(self.user, self.a, self.branch_a2)
-        )
-        self.assertNotIn("lead.view", effective_permissions(self.user, self.a))
+        with self.assertRaises(ValidationError):assignment.full_clean()
 
     def test_privilege_escalation_to_unapproved_platform_role_is_rejected(self):
         role = self.role(

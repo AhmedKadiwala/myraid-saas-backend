@@ -11,7 +11,7 @@ from .models import (
     UserRole,
 )
 
-PERMISSION_CACHE_SECONDS = 300
+PERMISSION_CACHE_SECONDS = 30
 
 
 def resolve_tenant(request, required=True):
@@ -28,7 +28,7 @@ def resolve_tenant(request, required=True):
         user=request.user, is_active=True
     )
     membership = memberships.filter(tenant_id=tenant_id).first() if tenant_id else None
-    if membership is None and memberships.count() == 1:
+    if membership is None and not tenant_id and memberships.count() == 1:
         membership = memberships.first()
     if membership is None:
         if required:
@@ -46,6 +46,11 @@ def resolve_branch(request, tenant=None):
     tenant = tenant or getattr(request, "tenant", None)
     branch_id = getattr(request, "requested_branch_id", None)
     if not branch_id:
+        membership=getattr(request,"tenant_membership",None)
+        if membership and membership.default_branch_id:
+            branch=Branch.objects.filter(pk=membership.default_branch_id,tenant=tenant,is_active=True).first()
+            request.branch=branch
+            return branch
         request.branch = None
         return None
     branch = Branch.objects.filter(pk=branch_id, tenant=tenant, is_active=True).first()
@@ -72,16 +77,14 @@ def effective_permissions(user, tenant, branch=None, at=None):
     assignments = UserRole.objects.filter(
         tenant=tenant,
         user=user,
+        is_active=True,
         role__is_active=True,
         role__permission_links__permission__is_active=True,
     ).filter(
         Q(valid_from__isnull=True) | Q(valid_from__lte=at),
         Q(valid_to__isnull=True) | Q(valid_to__gte=at),
     )
-    if branch:
-        assignments = assignments.filter(Q(branch__isnull=True) | Q(branch=branch))
-    else:
-        assignments = assignments.filter(branch__isnull=True)
+    assignments = assignments.filter(branch__isnull=True)
     codes = set(
         assignments.values_list(
             "role__permission_links__permission__code", flat=True

@@ -573,7 +573,7 @@ class Migration(migrations.Migration):
             name='TenantSettings',
             fields=[
                 ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('timezone', models.CharField(default='Asia/Calcutta', max_length=64)),
+                ('timezone', models.CharField(default='Asia/Kolkata', max_length=64)),
                 ('currency', models.CharField(default='INR', max_length=3)),
                 ('date_format', models.CharField(default='dd/MM/yyyy', max_length=30)),
                 ('quotation_prefix', models.CharField(default='QT', max_length=20)),

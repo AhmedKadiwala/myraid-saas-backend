@@ -9,6 +9,8 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 
 
 def load_project_env():
+    if os.getenv("MYRAID_SKIP_ENV") == "1":
+        return
     env_path = next(
         (path for path in (BASE_DIR / ".env", BASE_DIR.parent / ".env") if path.exists()),
         None,
@@ -20,7 +22,7 @@ def load_project_env():
         if not line or line.startswith("#") or "=" not in line:
             continue
         key, value = line.split("=", 1)
-        os.environ[key.strip()] = value.strip().strip('"').strip("'")
+        os.environ.setdefault(key.strip(), value.strip().strip('"').strip("'"))
 
 
 load_project_env()
@@ -42,6 +44,7 @@ INSTALLED_APPS = [
     "drf_spectacular",
     "django_celery_beat",
     "apps.core",
+    "apps.erp",
 ]
 
 MIDDLEWARE = [
@@ -85,11 +88,12 @@ AUTH_PASSWORD_VALIDATORS = [
 ]
 
 LANGUAGE_CODE = "en-us"
-TIME_ZONE = os.getenv("TIME_ZONE", "Asia/Calcutta")
+TIME_ZONE = os.getenv("TIME_ZONE", "Asia/Kolkata")
 USE_I18N = True
 USE_TZ = True
 STATIC_URL = "/static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
+STATICFILES_STORAGE = "whitenoise.storage.CompressedManifestStaticFilesStorage"
 MEDIA_URL = "/media/"
 MEDIA_ROOT = Path(os.getenv("MEDIA_ROOT", BASE_DIR.parent / "media"))
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
@@ -100,7 +104,7 @@ CORS_ALLOWED_ORIGINS = [
     ).split(",") if value.strip()
 ]
 CORS_ALLOW_CREDENTIALS = True
-CORS_ALLOW_HEADERS = (*default_headers, "x-tenant-id", "x-branch-id")
+CORS_ALLOW_HEADERS = (*default_headers, "x-tenant-id", "x-branch-id", "idempotency-key", "if-match")
 CSRF_TRUSTED_ORIGINS = [
     value.strip() for value in os.getenv(
         "CSRF_TRUSTED_ORIGINS", ",".join(CORS_ALLOWED_ORIGINS)
@@ -112,6 +116,7 @@ for local_origin in ("http://localhost:5173", "http://127.0.0.1:5173"):
 
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": (
+        "apps.erp.api_keys.ERPApiKeyAuthentication",
         "apps.core.authentication.CookieOrHeaderJWTAuthentication",
     ),
     "DEFAULT_PERMISSION_CLASSES": ("apps.core.permissions.TenantRBACPermission",),
@@ -128,22 +133,18 @@ SIMPLE_JWT = {
     "SIGNING_KEY": SECRET_KEY,
 }
 SPECTACULAR_SETTINGS = {
-    "TITLE": "Myraid CRM SaaS API",
+    "TITLE": "Myraid ERP SaaS API",
     "VERSION": "1.0.0",
     "SERVE_INCLUDE_SCHEMA": False,
 }
 
-CACHES = {
-    "default": {
-        "BACKEND": os.getenv(
-            "CACHE_BACKEND",
-            "django.core.cache.backends.locmem.LocMemCache",
-        ),
-        "LOCATION": os.getenv("REDIS_URL", "redis://redis:6379/1"),
-    }
-}
-CELERY_BROKER_URL = os.getenv("REDIS_URL", "redis://redis:6379/0")
-CELERY_RESULT_BACKEND = os.getenv("REDIS_URL", "redis://redis:6379/0")
+REDIS_URL = os.getenv("REDIS_URL") or "redis://redis:6379/0"
+CACHE_BACKEND = os.getenv("CACHE_BACKEND", "django.core.cache.backends.locmem.LocMemCache")
+CACHES = {"default": {"BACKEND": CACHE_BACKEND}}
+if CACHE_BACKEND == "django.core.cache.backends.redis.RedisCache":
+    CACHES["default"]["LOCATION"] = REDIS_URL
+CELERY_BROKER_URL = REDIS_URL
+CELERY_RESULT_BACKEND = REDIS_URL
 CELERY_TASK_ALWAYS_EAGER = os.getenv("CELERY_TASK_ALWAYS_EAGER", "0") == "1"
 CELERY_BEAT_SCHEDULER = "django_celery_beat.schedulers:DatabaseScheduler"
 
@@ -153,6 +154,18 @@ EMAIL_BACKEND = os.getenv(
 EMAIL_HOST = os.getenv("EMAIL_HOST", "mailpit")
 EMAIL_PORT = int(os.getenv("EMAIL_PORT", "1025"))
 DEFAULT_FROM_EMAIL = os.getenv("DEFAULT_FROM_EMAIL", "noreply@myraid.local")
+ERP_EMAIL_ENABLED = os.getenv("ERP_EMAIL_ENABLED", "0") == "1"
+ERP_ALLOW_PASSWORD_LOGIN = os.getenv("ERP_ALLOW_PASSWORD_LOGIN", "0") == "1"
+ERP_DEV_FIXED_OTP = os.getenv("ERP_DEV_FIXED_OTP", "") if DEBUG else ""
+ERP_SMS_ENABLED = os.getenv("ERP_SMS_ENABLED", "0") == "1"
+MSG91_FLOW_URL = os.getenv("MSG91_FLOW_URL", "https://api.msg91.com/api/v5/flow/")
+MSG91_AUTH_KEY = os.getenv("MSG91_AUTH_KEY", "")
+MSG91_OTP_FLOW_ID = os.getenv("MSG91_OTP_FLOW_ID", "")
+MSG91_SENDER_ID = os.getenv("MSG91_SENDER_ID", "")
+MSG91_OTP_VARIABLE = os.getenv("MSG91_OTP_VARIABLE", "OTP")
+WHATSAPP_API_URL = os.getenv("WHATSAPP_API_URL", "")
+WHATSAPP_ACCESS_TOKEN = os.getenv("WHATSAPP_ACCESS_TOKEN", "")
+ERP_ENCRYPTION_KEYS = [value.strip() for value in os.getenv("ERP_ENCRYPTION_KEYS", "").split(",") if value.strip()]
 
 STORAGE_BACKEND = os.getenv("STORAGE_BACKEND", "local")
 AWS_ACCESS_KEY_ID = os.getenv("AWS_ACCESS_KEY_ID", "minioadmin")
@@ -170,3 +183,6 @@ RAZORPAY_MODE = os.getenv("RAZORPAY_MODE", "test")
 SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 SESSION_COOKIE_SECURE = not DEBUG
 CSRF_COOKIE_SECURE = not DEBUG
+SESSION_COOKIE_SAMESITE = os.getenv("SESSION_COOKIE_SAMESITE", "Lax")
+CSRF_COOKIE_SAMESITE = os.getenv("CSRF_COOKIE_SAMESITE", SESSION_COOKIE_SAMESITE)
+SECURE_SSL_REDIRECT = os.getenv("SECURE_SSL_REDIRECT", "0" if DEBUG else "1") == "1"

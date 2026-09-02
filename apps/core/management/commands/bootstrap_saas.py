@@ -111,10 +111,14 @@ class Command(BaseCommand):
                 ).exists()
             ]
         )
-        UserRole.objects.get_or_create(
+        UserRole.objects.filter(tenant=tenant,user=user,is_active=True).exclude(role=role).update(is_active=False)
+        assignment, _ = UserRole.objects.get_or_create(
             tenant=tenant, user=user, role=role, branch=None,
             defaults={"assigned_by": user},
         )
+        if not assignment.is_active:
+            assignment.is_active=True
+            assignment.save(update_fields=["is_active","updated_at"])
         every_minute, _ = IntervalSchedule.objects.get_or_create(
             every=1, period=IntervalSchedule.MINUTES
         )
@@ -137,6 +141,11 @@ class Command(BaseCommand):
                 "enabled": True,
             },
         )
+        PeriodicTask.objects.update_or_create(name="Process ERP outbox",defaults={"interval":every_minute,"task":"apps.erp.tasks.process_erp_outbox","enabled":True})
+        PeriodicTask.objects.update_or_create(name="Generate due ERP recurring expenses",defaults={"interval":hourly,"task":"apps.erp.tasks.generate_due_recurring_expenses","enabled":True})
+        PeriodicTask.objects.update_or_create(name="Run ERP scheduled reports",defaults={"interval":hourly,"task":"apps.erp.tasks.run_erp_schedules","enabled":True})
+        PeriodicTask.objects.update_or_create(name="Deliver ERP webhooks",defaults={"interval":every_minute,"task":"apps.erp.tasks.deliver_erp_webhooks","enabled":True})
+        PeriodicTask.objects.update_or_create(name="Purge expired Myraid login OTPs",defaults={"interval":hourly,"task":"apps.erp.tasks.purge_expired_login_otps","enabled":True})
         self.stdout.write(self.style.SUCCESS(
             f"Bootstrapped tenant={tenant.slug} admin={user.email} "
             f"tenant_id={tenant.pk}"
