@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: myraid-backend
+    name: myraid-saas-backend
     runtime: python
     buildCommand: bash build.sh
     startCommand: gunicorn config.wsgi:application --bind 0.0.0.0:$PORT
@@ -10,7 +10,7 @@ services:
       - key: DJANGO_SECRET_KEY
         sync: false
       - key: DJANGO_ALLOWED_HOSTS
-        value: myraid-backend.onrender.com
+        value: myraid-saas-backend.onrender.com
       - key: DATABASE_URL
         sync: false
       - key: CACHE_BACKEND
