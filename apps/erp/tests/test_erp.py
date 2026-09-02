@@ -333,6 +333,7 @@ class PhoneOTPTestCase(TestCase):
         self.assertEqual(request.status_code,200,request.data);otp=m.LoginOTP.objects.get();self.assertNotIn("654321",otp.code_hash);self.assertTrue(check_password("654321",otp.code_hash))
         bad=api.post("/api/v1/erp/auth/otp/verify-otp/",{"phone":"+919876543210","code":"000000"},format="json");self.assertEqual(bad.status_code,400)
         verified=api.post("/api/v1/erp/auth/otp/verify-otp/",{"phone":"+919876543210","code":"654321"},format="json");self.assertEqual(verified.status_code,200,verified.data);self.assertIn("access_token",verified.cookies)
+        self.assertIn("access",verified.data);self.assertIn("refresh",verified.data)
         reused=api.post("/api/v1/erp/auth/otp/verify-otp/",{"phone":"+919876543210","code":"654321"},format="json");self.assertEqual(reused.status_code,400)
 
     def test_same_phone_user_has_different_role_in_different_companies(self):

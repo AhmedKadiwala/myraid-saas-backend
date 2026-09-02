@@ -45,6 +45,8 @@ class OTPMessageSerializer(serializers.Serializer):
 
 
 class OTPVerifyResponseSerializer(OTPMessageSerializer):
+    access = serializers.CharField()
+    refresh = serializers.CharField()
     userData = serializers.JSONField()
 
 
@@ -113,5 +115,5 @@ class VerifyOTPView(APIView):
         if not check_password(code,otp.code_hash):otp.save(update_fields=["attempts"]);raise ValidationError("The code is invalid or expired. Request a new one.")
         otp.consumed_at=timezone.now();otp.save(update_fields=["attempts","consumed_at"])
         if not user.phone_verified_at:user.phone_verified_at=timezone.now();user.save(update_fields=["phone_verified_at"])
-        refresh=RefreshToken.for_user(user);response=Response({"message":"Welcome back.","userData":user_payload(user)})
+        refresh=RefreshToken.for_user(user);response=Response({"message":"Welcome back.","access":str(refresh.access_token),"refresh":str(refresh),"userData":user_payload(user)})
         set_auth_cookies(response,refresh);get_token(request);return response
