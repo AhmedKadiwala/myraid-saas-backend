@@ -33,15 +33,20 @@ class OTPRequestSerializer(serializers.Serializer):
 
 class OTPVerifySerializer(OTPRequestSerializer):
     code = serializers.CharField(required=True, allow_blank=False, trim_whitespace=True)
+    otp_token = serializers.CharField(required=True, allow_blank=False, trim_whitespace=True)
 
     def validate_code(self, value):
         if not value.isdigit() or len(value) != 6:
-            raise serializers.ValidationError("Enter the 6-digit code.")
+            raise serializers.ValidationError("Enter the 6-digit OTP code.")
         return value
 
 
 class OTPMessageSerializer(serializers.Serializer):
     message = serializers.CharField()
+
+
+class OTPRequestResponseSerializer(OTPMessageSerializer):
+    otp_token = serializers.CharField(required=False)
 
 
 class OTPVerifyResponseSerializer(OTPMessageSerializer):
@@ -60,6 +65,9 @@ def normalize_phone(value):
     if len(digits)==10:return "+91"+digits
     raise ValidationError({"phone":"Enter a valid 10-digit Indian mobile number or an international number with country code."})
 
+def hash_otp_token(value):
+    return hashlib.sha256(str(value).encode()).hexdigest()
+
 def dispatch_sms(phone,code,otp_id):
     if settings.DEBUG and not settings.MSG91_AUTH_KEY:
         print(f"[Myraid local OTP] {phone}: {code}");return
@@ -77,7 +85,7 @@ def dispatch_sms(phone,code,otp_id):
 
 class RequestOTPView(APIView):
     authentication_classes=[];permission_classes=[AllowAny];throttle_classes=[RequestThrottle]
-    @extend_schema(request=OTPRequestSerializer, responses={200: OTPMessageSerializer})
+    @extend_schema(request=OTPRequestSerializer, responses={200: OTPRequestResponseSerializer})
     def post(self,request):
         serializer=OTPRequestSerializer(data=request.data);serializer.is_valid(raise_exception=True)
         phone=serializer.validated_data["phone"];digits=phone[-10:]
@@ -90,12 +98,14 @@ class RequestOTPView(APIView):
             if LoginOTP.objects.filter(user=user,consumed_at__isnull=True,created_at__gt=timezone.now()-timedelta(seconds=60)).exists():
                 return Response({"message":"A code was sent recently. Please wait before requesting another."})
             code=settings.ERP_DEV_FIXED_OTP or f"{secrets.randbelow(1_000_000):06d}"
+            otp_token=secrets.token_urlsafe(32)
             LoginOTP.objects.filter(user=user,consumed_at__isnull=True).update(consumed_at=timezone.now())
             ip_hash=hashlib.sha256((request.META.get("REMOTE_ADDR","")+settings.SECRET_KEY).encode()).hexdigest()
-            otp=LoginOTP.objects.create(user=user,code_hash=make_password(code),expires_at=timezone.now()+timedelta(minutes=7),request_ip_hash=ip_hash)
+            otp=LoginOTP.objects.create(user=user,code_hash=make_password(code),otp_token_hash=hash_otp_token(otp_token),expires_at=timezone.now()+timedelta(minutes=7),request_ip_hash=ip_hash)
             try:dispatch_sms(phone,code,otp.pk)
             except Exception:
                 otp.consumed_at=timezone.now();otp.save(update_fields=["consumed_at"]);raise
+            return Response({"message":"If an active account matches that phone number, a sign-in code has been sent.","otp_token":otp_token})
         elif user and not settings.ERP_SMS_ENABLED:return Response({"message":"Phone OTP delivery is not configured on this server."},status=503)
         return Response({"message":"If an active account matches that phone number, a sign-in code has been sent."})
 
@@ -106,10 +116,10 @@ class VerifyOTPView(APIView):
     @transaction.atomic
     def post(self,request):
         serializer=OTPVerifySerializer(data=request.data);serializer.is_valid(raise_exception=True)
-        phone=serializer.validated_data["phone"];code=serializer.validated_data["code"]
+        phone=serializer.validated_data["phone"];code=serializer.validated_data["code"];otp_token=serializer.validated_data["otp_token"]
         digits=phone[-10:]
         user=User.objects.filter(is_active=True).filter(models.Q(phone_e164=phone)|models.Q(phone=digits)|models.Q(phone=phone)).first()
-        otp=LoginOTP.objects.select_for_update().filter(user=user,consumed_at__isnull=True,expires_at__gt=timezone.now()).order_by("-created_at").first() if user else None
+        otp=LoginOTP.objects.select_for_update().filter(user=user,otp_token_hash=hash_otp_token(otp_token),consumed_at__isnull=True,expires_at__gt=timezone.now()).order_by("-created_at").first() if user else None
         if not otp or otp.attempts>=5:raise ValidationError("The code is invalid or expired. Request a new one.")
         otp.attempts+=1
         if not check_password(code,otp.code_hash):otp.save(update_fields=["attempts"]);raise ValidationError("The code is invalid or expired. Request a new one.")

@@ -306,15 +306,19 @@ class PhoneOTPTestCase(TestCase):
         self.assertIn("phone",request.data["error"])
         self.assertFalse(m.LoginOTP.objects.exists())
 
-    def test_otp_verify_requires_phone_and_code_body(self):
+    def test_otp_verify_requires_phone_code_and_token_body(self):
         api=APIClient()
         missing_all=api.post("/api/v1/erp/auth/otp/verify-otp/",{},format="json")
         self.assertEqual(missing_all.status_code,400,missing_all.data)
         self.assertIn("phone",missing_all.data["error"])
         self.assertIn("code",missing_all.data["error"])
-        missing_code=api.post("/api/v1/erp/auth/otp/verify-otp/",{"phone":"+919876543210"},format="json")
+        self.assertIn("otp_token",missing_all.data["error"])
+        missing_code=api.post("/api/v1/erp/auth/otp/verify-otp/",{"phone":"+919876543210","otp_token":"request-token"},format="json")
         self.assertEqual(missing_code.status_code,400,missing_code.data)
         self.assertIn("code",missing_code.data["error"])
+        missing_token=api.post("/api/v1/erp/auth/otp/verify-otp/",{"phone":"+919876543210","code":"654321"},format="json")
+        self.assertEqual(missing_token.status_code,400,missing_token.data)
+        self.assertIn("otp_token",missing_token.data["error"])
 
     def test_otp_schema_documents_request_bodies(self):
         api=APIClient()
@@ -324,17 +328,20 @@ class PhoneOTPTestCase(TestCase):
         self.assertIn("application/json",request_body["content"])
         self.assertIn("application/json",verify_body["content"])
         self.assertEqual(schema["components"]["schemas"]["OTPRequest"]["required"],["phone"])
-        self.assertEqual(set(schema["components"]["schemas"]["OTPVerify"]["required"]),{"phone","code"})
+        self.assertEqual(set(schema["components"]["schemas"]["OTPVerify"]["required"]),{"phone","code","otp_token"})
+        self.assertIn("otp_token",schema["components"]["schemas"]["OTPRequestResponse"]["properties"])
 
     @override_settings(ERP_SMS_ENABLED=True,DEBUG=True,MSG91_AUTH_KEY="")
     @patch("apps.erp.otp.secrets.randbelow",return_value=654321)
     def test_phone_otp_is_hashed_single_use_and_sets_session(self,_random):
         api=APIClient();request=api.post("/api/v1/erp/auth/otp/request-otp/",{"phone":"98765 43210"},format="json")
         self.assertEqual(request.status_code,200,request.data);otp=m.LoginOTP.objects.get();self.assertNotIn("654321",otp.code_hash);self.assertTrue(check_password("654321",otp.code_hash))
-        bad=api.post("/api/v1/erp/auth/otp/verify-otp/",{"phone":"+919876543210","code":"000000"},format="json");self.assertEqual(bad.status_code,400)
-        verified=api.post("/api/v1/erp/auth/otp/verify-otp/",{"phone":"+919876543210","code":"654321"},format="json");self.assertEqual(verified.status_code,200,verified.data);self.assertIn("access_token",verified.cookies)
+        self.assertIn("otp_token",request.data);self.assertNotEqual(request.data["otp_token"],"654321")
+        bad=api.post("/api/v1/erp/auth/otp/verify-otp/",{"phone":"+919876543210","code":"000000","otp_token":request.data["otp_token"]},format="json");self.assertEqual(bad.status_code,400)
+        wrong_token=api.post("/api/v1/erp/auth/otp/verify-otp/",{"phone":"+919876543210","code":"654321","otp_token":"wrong-token"},format="json");self.assertEqual(wrong_token.status_code,400)
+        verified=api.post("/api/v1/erp/auth/otp/verify-otp/",{"phone":"+919876543210","code":"654321","otp_token":request.data["otp_token"]},format="json");self.assertEqual(verified.status_code,200,verified.data);self.assertIn("access_token",verified.cookies)
         self.assertIn("access",verified.data);self.assertIn("refresh",verified.data)
-        reused=api.post("/api/v1/erp/auth/otp/verify-otp/",{"phone":"+919876543210","code":"654321"},format="json");self.assertEqual(reused.status_code,400)
+        reused=api.post("/api/v1/erp/auth/otp/verify-otp/",{"phone":"+919876543210","code":"654321","otp_token":request.data["otp_token"]},format="json");self.assertEqual(reused.status_code,400)
 
     def test_same_phone_user_has_different_role_in_different_companies(self):
         for code,module in [("workspace.view","workspace"),("item.view","item"),("payment.record","payment")]:
