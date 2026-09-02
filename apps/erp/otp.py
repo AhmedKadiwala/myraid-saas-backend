@@ -16,6 +16,7 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from drf_spectacular.utils import extend_schema
 from apps.core.models import User,TenantMembership
 from apps.core.auth_views import set_auth_cookies
+from apps.core.services import audit
 from django.middleware.csrf import get_token
 from .models import LoginOTP
 
@@ -33,11 +34,16 @@ class OTPRequestSerializer(serializers.Serializer):
 
 class OTPVerifySerializer(OTPRequestSerializer):
     code = serializers.CharField(required=True, allow_blank=False, trim_whitespace=True)
-    otp_token = serializers.CharField(required=True, allow_blank=False, trim_whitespace=True)
+    otp_token = serializers.CharField(required=True, allow_blank=False, trim_whitespace=True, max_length=128)
 
     def validate_code(self, value):
         if not value.isdigit() or len(value) != 6:
             raise serializers.ValidationError("Enter the 6-digit OTP code.")
+        return value
+
+    def validate_otp_token(self, value):
+        if len(value) < 32:
+            raise serializers.ValidationError("Enter a valid OTP token.")
         return value
 
 
@@ -68,6 +74,15 @@ def normalize_phone(value):
 def hash_otp_token(value):
     return hashlib.sha256(str(value).encode()).hexdigest()
 
+def otp_fail_key(phone):
+    return "otp-verify-fail:"+hashlib.sha256(phone.encode()).hexdigest()
+
+def record_otp_failure(phone):
+    key=otp_fail_key(phone);count=cache.get(key,0)+1;cache.set(key,count,15*60);return count
+
+def reset_otp_failures(phone):
+    cache.delete(otp_fail_key(phone))
+
 def dispatch_sms(phone,code,otp_id):
     if settings.DEBUG and not settings.MSG91_AUTH_KEY:
         print(f"[Myraid local OTP] {phone}: {code}");return
@@ -89,6 +104,7 @@ class RequestOTPView(APIView):
     def post(self,request):
         serializer=OTPRequestSerializer(data=request.data);serializer.is_valid(raise_exception=True)
         phone=serializer.validated_data["phone"];digits=phone[-10:]
+        response_payload={"message":"If an active account matches that phone number, a sign-in code has been sent.","otp_token":secrets.token_urlsafe(32)}
         phone_key="otp-phone:"+hashlib.sha256(phone.encode()).hexdigest()
         count=cache.get(phone_key,0)
         if count>=10:return Response({"message":"Too many OTP requests. Please wait before trying again."},status=429)
@@ -105,9 +121,10 @@ class RequestOTPView(APIView):
             try:dispatch_sms(phone,code,otp.pk)
             except Exception:
                 otp.consumed_at=timezone.now();otp.save(update_fields=["consumed_at"]);raise
-            return Response({"message":"If an active account matches that phone number, a sign-in code has been sent.","otp_token":otp_token})
+            audit(actor=user,action="auth.otp.requested",resource=otp,tenant=None,request=request)
+            return Response({**response_payload,"otp_token":otp_token})
         elif user and not settings.ERP_SMS_ENABLED:return Response({"message":"Phone OTP delivery is not configured on this server."},status=503)
-        return Response({"message":"If an active account matches that phone number, a sign-in code has been sent."})
+        return Response(response_payload)
 
 
 class VerifyOTPView(APIView):
@@ -117,13 +134,17 @@ class VerifyOTPView(APIView):
     def post(self,request):
         serializer=OTPVerifySerializer(data=request.data);serializer.is_valid(raise_exception=True)
         phone=serializer.validated_data["phone"];code=serializer.validated_data["code"];otp_token=serializer.validated_data["otp_token"]
+        if cache.get(otp_fail_key(phone),0)>=5:return Response({"message":"Too many failed OTP attempts. Request a new code and try again."},status=429)
         digits=phone[-10:]
         user=User.objects.filter(is_active=True).filter(models.Q(phone_e164=phone)|models.Q(phone=digits)|models.Q(phone=phone)).first()
         otp=LoginOTP.objects.select_for_update().filter(user=user,otp_token_hash=hash_otp_token(otp_token),consumed_at__isnull=True,expires_at__gt=timezone.now()).order_by("-created_at").first() if user else None
-        if not otp or otp.attempts>=5:raise ValidationError("The code is invalid or expired. Request a new one.")
+        if not otp or otp.attempts>=5:
+            record_otp_failure(phone);raise ValidationError("The code is invalid or expired. Request a new one.")
         otp.attempts+=1
-        if not check_password(code,otp.code_hash):otp.save(update_fields=["attempts"]);raise ValidationError("The code is invalid or expired. Request a new one.")
+        if not check_password(code,otp.code_hash):
+            otp.save(update_fields=["attempts"]);record_otp_failure(phone);audit(actor=user,action="auth.otp.failed",resource=otp,tenant=None,request=request);raise ValidationError("The code is invalid or expired. Request a new one.")
         otp.consumed_at=timezone.now();otp.save(update_fields=["attempts","consumed_at"])
+        reset_otp_failures(phone);audit(actor=user,action="auth.otp.verified",resource=otp,tenant=None,request=request)
         if not user.phone_verified_at:user.phone_verified_at=timezone.now();user.save(update_fields=["phone_verified_at"])
         refresh=RefreshToken.for_user(user);response=Response({"message":"Welcome back.","access":str(refresh.access_token),"refresh":str(refresh),"userData":user_payload(user)})
         set_auth_cookies(response,refresh);get_token(request);return response

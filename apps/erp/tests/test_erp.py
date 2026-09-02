@@ -7,6 +7,7 @@ from django.test import TestCase
 from django.test import override_settings
 from django.utils import timezone
 from django.db.models import Sum
+from django.core.cache import cache
 from unittest.mock import patch
 from django.contrib.auth.hashers import check_password
 from rest_framework.test import APIClient
@@ -293,6 +294,7 @@ class OnboardingTestCase(TestCase):
 
 class PhoneOTPTestCase(TestCase):
     def setUp(self):
+        cache.clear()
         self.tenant=Tenant.objects.create(name="OTP Factory",slug="otp-factory",status="active")
         self.branch1=Branch.objects.create(tenant=self.tenant,name="Branch One",code="one")
         self.branch2=Branch.objects.create(tenant=self.tenant,name="Branch Two",code="two")
@@ -305,6 +307,17 @@ class PhoneOTPTestCase(TestCase):
         self.assertEqual(request.status_code,400,request.data)
         self.assertIn("phone",request.data["error"])
         self.assertFalse(m.LoginOTP.objects.exists())
+
+    @override_settings(ERP_SMS_ENABLED=True,DEBUG=True,MSG91_AUTH_KEY="")
+    def test_otp_request_response_does_not_reveal_unknown_phone(self):
+        api=APIClient()
+        known=api.post("/api/v1/erp/auth/otp/request-otp/",{"phone":"9876543210"},format="json")
+        unknown=api.post("/api/v1/erp/auth/otp/request-otp/",{"phone":"9999999999"},format="json")
+        self.assertEqual(known.status_code,200,known.data)
+        self.assertEqual(unknown.status_code,200,unknown.data)
+        self.assertEqual(known.data["message"],unknown.data["message"])
+        self.assertIn("otp_token",known.data);self.assertIn("otp_token",unknown.data)
+        self.assertNotEqual(known.data["otp_token"],unknown.data["otp_token"])
 
     def test_otp_verify_requires_phone_code_and_token_body(self):
         api=APIClient()
@@ -342,6 +355,16 @@ class PhoneOTPTestCase(TestCase):
         verified=api.post("/api/v1/erp/auth/otp/verify-otp/",{"phone":"+919876543210","code":"654321","otp_token":request.data["otp_token"]},format="json");self.assertEqual(verified.status_code,200,verified.data);self.assertIn("access_token",verified.cookies)
         self.assertIn("access",verified.data);self.assertIn("refresh",verified.data)
         reused=api.post("/api/v1/erp/auth/otp/verify-otp/",{"phone":"+919876543210","code":"654321","otp_token":request.data["otp_token"]},format="json");self.assertEqual(reused.status_code,400)
+
+    @override_settings(ERP_SMS_ENABLED=True,DEBUG=True,MSG91_AUTH_KEY="")
+    @patch("apps.erp.otp.secrets.randbelow",return_value=654321)
+    def test_phone_otp_failed_verification_rate_limit(self,_random):
+        api=APIClient();request=api.post("/api/v1/erp/auth/otp/request-otp/",{"phone":"9876543210"},format="json")
+        payload={"phone":"+919876543210","code":"000000","otp_token":request.data["otp_token"]}
+        for _ in range(5):
+            self.assertEqual(api.post("/api/v1/erp/auth/otp/verify-otp/",payload,format="json").status_code,400)
+        locked=api.post("/api/v1/erp/auth/otp/verify-otp/",payload,format="json")
+        self.assertEqual(locked.status_code,429,locked.data)
 
     def test_same_phone_user_has_different_role_in_different_companies(self):
         for code,module in [("workspace.view","workspace"),("item.view","item"),("payment.record","payment")]:
