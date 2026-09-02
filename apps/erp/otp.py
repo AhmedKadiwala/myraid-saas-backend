@@ -287,47 +287,12 @@ class RequestOTPView(APIView):
             )
 
         delivery_mode = getattr(settings, "ERP_OTP_MODE", "mock").strip().lower()
-        phone_digits = "".join(ch for ch in phone if ch.isdigit())
-        local_number = phone_digits[-10:]
-        mock_prefix = getattr(
-            settings,
-            "ERP_MOCK_PHONE_PREFIX",
-            "88888",
-        ).strip()
 
         if delivery_mode == "mock":
-            # Mock mode is deliberately restricted to seeded/fake numbers.
-            # This prevents a real/admin phone number from using a public test OTP.
-            if not mock_prefix or not local_number.startswith(mock_prefix):
-                return Response(
-                    {
-                        "message": (
-                            "Mock OTP mode is enabled, but this is not a "
-                            "seeded mock phone number."
-                        ),
-                        "user_exists": True,
-                        "otp_created": False,
-                        "otp_token": None,
-                        "delivery_mode": "mock",
-                    },
-                    status=403,
-                )
-
-            code = getattr(settings, "ERP_MOCK_OTP", "123456").strip()
-
-            if not code.isdigit() or len(code) != 6:
-                return Response(
-                    {
-                        "message": (
-                            "ERP_MOCK_OTP must be configured as a 6-digit code."
-                        ),
-                        "user_exists": True,
-                        "otp_created": False,
-                        "otp_token": None,
-                        "delivery_mode": "mock",
-                    },
-                    status=503,
-                )
+            # Mock mode uses the exact same OTP persistence/verification flow
+            # as SMS mode. The only difference is delivery: instead of calling
+            # an SMS provider, the generated code is returned in the response.
+            code = f"{secrets.randbelow(1_000_000):06d}"
 
         elif delivery_mode == "sms":
             if not settings.ERP_SMS_ENABLED:
