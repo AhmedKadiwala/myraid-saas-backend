@@ -13,6 +13,7 @@ from rest_framework.throttling import AnonRateThrottle
 from rest_framework.exceptions import ValidationError
 from rest_framework.response import Response
 from rest_framework_simplejwt.tokens import RefreshToken
+from drf_spectacular.utils import extend_schema
 from apps.core.models import User,TenantMembership
 from apps.core.auth_views import set_auth_cookies
 from django.middleware.csrf import get_token
@@ -37,6 +38,14 @@ class OTPVerifySerializer(OTPRequestSerializer):
         if not value.isdigit() or len(value) != 6:
             raise serializers.ValidationError("Enter the 6-digit code.")
         return value
+
+
+class OTPMessageSerializer(serializers.Serializer):
+    message = serializers.CharField()
+
+
+class OTPVerifyResponseSerializer(OTPMessageSerializer):
+    userData = serializers.JSONField()
 
 
 def user_payload(user):
@@ -66,6 +75,7 @@ def dispatch_sms(phone,code,otp_id):
 
 class RequestOTPView(APIView):
     authentication_classes=[];permission_classes=[AllowAny];throttle_classes=[RequestThrottle]
+    @extend_schema(request=OTPRequestSerializer, responses={200: OTPMessageSerializer})
     def post(self,request):
         serializer=OTPRequestSerializer(data=request.data);serializer.is_valid(raise_exception=True)
         phone=serializer.validated_data["phone"];digits=phone[-10:]
@@ -90,6 +100,7 @@ class RequestOTPView(APIView):
 
 class VerifyOTPView(APIView):
     authentication_classes=[];permission_classes=[AllowAny];throttle_classes=[VerifyThrottle]
+    @extend_schema(request=OTPVerifySerializer, responses={200: OTPVerifyResponseSerializer})
     @transaction.atomic
     def post(self,request):
         serializer=OTPVerifySerializer(data=request.data);serializer.is_valid(raise_exception=True)

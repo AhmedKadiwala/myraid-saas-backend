@@ -316,6 +316,16 @@ class PhoneOTPTestCase(TestCase):
         self.assertEqual(missing_code.status_code,400,missing_code.data)
         self.assertIn("code",missing_code.data["error"])
 
+    def test_otp_schema_documents_request_bodies(self):
+        api=APIClient()
+        schema=api.get("/api/schema/").data
+        request_body=schema["paths"]["/api/v1/erp/auth/otp/request-otp/"]["post"]["requestBody"]
+        verify_body=schema["paths"]["/api/v1/erp/auth/otp/verify-otp/"]["post"]["requestBody"]
+        self.assertIn("application/json",request_body["content"])
+        self.assertIn("application/json",verify_body["content"])
+        self.assertEqual(schema["components"]["schemas"]["OTPRequest"]["required"],["phone"])
+        self.assertEqual(set(schema["components"]["schemas"]["OTPVerify"]["required"]),{"phone","code"})
+
     @override_settings(ERP_SMS_ENABLED=True,DEBUG=True,MSG91_AUTH_KEY="")
     @patch("apps.erp.otp.secrets.randbelow",return_value=654321)
     def test_phone_otp_is_hashed_single_use_and_sets_session(self,_random):
