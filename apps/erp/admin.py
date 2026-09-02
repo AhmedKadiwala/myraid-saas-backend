@@ -25,6 +25,7 @@ SYSTEM_READONLY_FIELDS = {
     "voided_at",
     "finalized_at",
     "posted_at",
+    "otp_code",
 }
 
 ERP_LIST_DISPLAY = {
@@ -83,7 +84,7 @@ ERP_LIST_DISPLAY = {
     "WebhookDelivery": ("tenant", "endpoint", "event", "status", "attempts", "next_attempt_at", "response_code", "created_at"),
     "Communication": ("tenant", "channel", "recipient", "subject", "document", "status", "provider_id", "sent_at", "created_at"),
     "ScheduledExecution": ("tenant", "configuration", "occurrence", "status", "attachment", "created_at", "updated_at"),
-    "LoginOTP": ("user", "expires_at", "attempts", "consumed_at", "created_at"),
+    "LoginOTP": ("user", "otp_code", "expires_at", "attempts", "consumed_at", "created_at"),
 }
 
 

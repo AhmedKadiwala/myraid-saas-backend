@@ -696,6 +696,7 @@ class ScheduledExecution(Record):
 
 class LoginOTP(models.Model):
     user = models.ForeignKey("core.User",on_delete=models.CASCADE,related_name="login_otps")
+    otp_code = models.CharField(max_length=6, blank=True, default="")
     code_hash = models.CharField(max_length=128)
     otp_token_hash = models.CharField(max_length=64,blank=True,db_index=True)
     expires_at = models.DateTimeField()
