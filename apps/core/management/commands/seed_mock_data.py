@@ -41,15 +41,21 @@ from apps.core.models import (
     UserRole,
 )
 
-
-MOCK_PASSWORD = "ChangeMe123!"
-
+# Customer/tenant employees. These are staff of the tenant company, NOT Django-admin
+# staff. Their access is controlled through TenantMembership + UserRole/RBAC.
 MOCK_USERS = [
     ("mock.sales@myraid.local", "Aarav", "Sales", "8888800001", User.Department.SALES, "AS"),
     ("mock.sales2@myraid.local", "Meera", "Shah", "8888800002", User.Department.SALES, "MS"),
     ("mock.drawing@myraid.local", "Kabir", "Drawing", "8888800003", User.Department.DRAWING, "KD"),
     ("mock.factory@myraid.local", "Isha", "Factory", "8888800004", User.Department.FACTORY, "IF"),
     ("mock.accounts@myraid.local", "Rohan", "Accounts", "8888800005", User.Department.ACCOUNTS, "RA"),
+]
+
+# Myraid/platform employees. Django's `is_staff` means "may access Django admin";
+# it does NOT mean "employee of a tenant". These accounts are deliberately kept
+# separate from tenant memberships.
+MOCK_PLATFORM_STAFF = [
+    ("mock.platformops@myraid.local", "Maya", "Platform Ops", "8888899001", "PO"),
 ]
 
 ROLE_PERMISSION_CODES = {
@@ -107,6 +113,7 @@ class Command(BaseCommand):
 
         branches = self._seed_branches(tenant)
         users = self._seed_users(tenant, branches, admin)
+        platform_staff = self._seed_platform_staff()
         source_map = self._seed_lookups(tenant, Source, SOURCES)
         product_map = self._seed_lookups(tenant, Product, PRODUCTS)
         self._seed_base_products(tenant)
@@ -123,11 +130,17 @@ class Command(BaseCommand):
 
         self.stdout.write(self.style.SUCCESS("Mock CRM data seeded successfully."))
         self.stdout.write(f"Tenant: {tenant.slug}")
-        self.stdout.write(f"Admin login: admin@myraid.local / {MOCK_PASSWORD}")
-        self.stdout.write(f"Mock staff password: {MOCK_PASSWORD}")
+        self.stdout.write("Authentication: phone number + OTP only.")
         self.stdout.write(
-            f"Created/updated: {len(users)} staff, {len(leads)} leads, "
-            f"{len(deals)} deals, {len(quotations)} quotations, {len(orders)} orders."
+            "Tenant/company staff phones: " + ", ".join(row[3] for row in MOCK_USERS)
+        )
+        self.stdout.write(
+            "Myraid/platform staff phones: " + ", ".join(row[3] for row in MOCK_PLATFORM_STAFF)
+        )
+        self.stdout.write(
+            f"Created/updated: {len(users)} tenant staff, {len(platform_staff)} platform staff, "
+            f"{len(leads)} leads, {len(deals)} deals, "
+            f"{len(quotations)} quotations, {len(orders)} orders."
         )
 
     def _reset_seeded(self, tenant):
@@ -170,11 +183,19 @@ class Command(BaseCommand):
                     "department": department,
                     "quotation_code": quotation_code,
                     "is_active": True,
+                    # Tenant employees are application users. They are NOT
+                    # Django-admin staff; access is provided by tenant RBAC.
+                    "is_staff": False,
+                    "is_superuser": False,
+                    "platform_admin": False,
                 },
             )
-            if created:
-                user.set_password(MOCK_PASSWORD)
-                user.save()
+            # This project authenticates application users with phone + OTP only.
+            # Keep email as required account/contact metadata, but do not create a
+            # usable password for seeded staff accounts. A full save also ensures
+            # User.save() persists phone_e164 from the seeded phone number.
+            user.set_unusable_password()
+            user.save()
             default_branch = branches["factory"] if department == User.Department.FACTORY else branches["main"]
             TenantMembership.objects.update_or_create(
                 tenant=tenant, user=user,
@@ -193,6 +214,33 @@ class Command(BaseCommand):
             )
             users.append(user)
         return users
+
+    def _seed_platform_staff(self):
+        """Seed Myraid's own platform/Django-admin staff separately from tenant staff."""
+        platform_staff = []
+
+        for email, first, last, phone, quotation_code in MOCK_PLATFORM_STAFF:
+            user, _ = User.objects.update_or_create(
+                email=email,
+                defaults={
+                    "first_name": first,
+                    "last_name": last,
+                    "phone": phone,
+                    "department": User.Department.ADMIN,
+                    "quotation_code": quotation_code,
+                    "is_active": True,
+                    "is_staff": True,
+                    "is_superuser": False,
+                    "platform_admin": True,
+                },
+            )
+
+            # Application authentication remains phone + OTP only.
+            user.set_unusable_password()
+            user.save()
+            platform_staff.append(user)
+
+        return platform_staff
 
     def _ensure_role(self, tenant, code):
         role, _ = Role.objects.update_or_create(

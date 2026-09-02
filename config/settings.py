@@ -417,6 +417,29 @@ ERP_DEV_FIXED_OTP = (
 )
 
 
+# OTP delivery mode:
+# - "mock": no SMS gateway is used. Intended for seeded/mock phone numbers only.
+# - "sms": real SMS delivery is used through MSG91.
+#
+# During the current development/testing phase we default to "mock".
+ERP_OTP_MODE = os.getenv(
+    "ERP_OTP_MODE",
+    "mock",
+).strip().lower()
+
+ERP_MOCK_OTP = os.getenv(
+    "ERP_MOCK_OTP",
+    "123456",
+).strip()
+
+# seed_mock_data.py uses 88888xxxxx phone numbers. Mock OTP mode is restricted
+# to that range so real/admin phone numbers do not receive a test OTP.
+ERP_MOCK_PHONE_PREFIX = os.getenv(
+    "ERP_MOCK_PHONE_PREFIX",
+    "88888",
+).strip()
+
+
 ERP_SMS_ENABLED = (
     os.getenv(
         "ERP_SMS_ENABLED",

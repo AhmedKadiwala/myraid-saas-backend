@@ -74,7 +74,11 @@ class OTPMessageSerializer(serializers.Serializer):
 
 
 class OTPRequestResponseSerializer(OTPMessageSerializer):
-    otp_token = serializers.CharField(required=False)
+    user_exists = serializers.BooleanField()
+    otp_created = serializers.BooleanField()
+    otp_token = serializers.CharField(required=False, allow_null=True)
+    delivery_mode = serializers.CharField(required=False)
+    mock_otp = serializers.CharField(required=False, allow_null=True)
 
 
 class OTPVerifyResponseSerializer(OTPMessageSerializer):
@@ -239,7 +243,10 @@ class RequestOTPView(APIView):
                 {
                     "message": (
                         "Too many OTP requests. Please wait before trying again."
-                    )
+                    ),
+                    "user_exists": False,
+                    "otp_created": False,
+                    "otp_token": None,
                 },
                 status=429,
             )
@@ -248,27 +255,15 @@ class RequestOTPView(APIView):
 
         user = find_active_user_by_phone(phone)
 
-        # Keep the response generic so this endpoint does not reveal whether
-        # a phone number belongs to an account. Most importantly, do NOT
-        # return a fake otp_token when no LoginOTP row was created.
         if not user:
             return Response(
                 {
-                    "message": (
-                        "If an active account matches that phone number, "
-                        "a sign-in code has been sent."
-                    )
-                }
-            )
-
-        if not settings.ERP_SMS_ENABLED:
-            return Response(
-                {
-                    "message": (
-                        "Phone OTP delivery is not configured on this server."
-                    )
+                    "message": "No active user exists with this phone number.",
+                    "user_exists": False,
+                    "otp_created": False,
+                    "otp_token": None,
                 },
-                status=503,
+                status=404,
             )
 
         recent_otp = LoginOTP.objects.filter(
@@ -281,20 +276,96 @@ class RequestOTPView(APIView):
             return Response(
                 {
                     "message": (
-                        "A code was sent recently. Please wait before "
+                        "A code was created recently. Please wait before "
                         "requesting another."
-                    )
+                    ),
+                    "user_exists": True,
+                    "otp_created": False,
+                    "otp_token": None,
                 },
                 status=429,
             )
 
-        code = (
-            settings.ERP_DEV_FIXED_OTP
-            or f"{secrets.randbelow(1_000_000):06d}"
-        )
+        delivery_mode = getattr(settings, "ERP_OTP_MODE", "mock").strip().lower()
+        phone_digits = "".join(ch for ch in phone if ch.isdigit())
+        local_number = phone_digits[-10:]
+        mock_prefix = getattr(
+            settings,
+            "ERP_MOCK_PHONE_PREFIX",
+            "88888",
+        ).strip()
+
+        if delivery_mode == "mock":
+            # Mock mode is deliberately restricted to seeded/fake numbers.
+            # This prevents a real/admin phone number from using a public test OTP.
+            if not mock_prefix or not local_number.startswith(mock_prefix):
+                return Response(
+                    {
+                        "message": (
+                            "Mock OTP mode is enabled, but this is not a "
+                            "seeded mock phone number."
+                        ),
+                        "user_exists": True,
+                        "otp_created": False,
+                        "otp_token": None,
+                        "delivery_mode": "mock",
+                    },
+                    status=403,
+                )
+
+            code = getattr(settings, "ERP_MOCK_OTP", "123456").strip()
+
+            if not code.isdigit() or len(code) != 6:
+                return Response(
+                    {
+                        "message": (
+                            "ERP_MOCK_OTP must be configured as a 6-digit code."
+                        ),
+                        "user_exists": True,
+                        "otp_created": False,
+                        "otp_token": None,
+                        "delivery_mode": "mock",
+                    },
+                    status=503,
+                )
+
+        elif delivery_mode == "sms":
+            if not settings.ERP_SMS_ENABLED:
+                return Response(
+                    {
+                        "message": (
+                            "SMS OTP mode is selected but SMS delivery is disabled."
+                        ),
+                        "user_exists": True,
+                        "otp_created": False,
+                        "otp_token": None,
+                        "delivery_mode": "sms",
+                    },
+                    status=503,
+                )
+
+            code = (
+                settings.ERP_DEV_FIXED_OTP
+                or f"{secrets.randbelow(1_000_000):06d}"
+            )
+
+        else:
+            return Response(
+                {
+                    "message": (
+                        "Invalid ERP_OTP_MODE. Use 'mock' for development "
+                        "or 'sms' for real SMS delivery."
+                    ),
+                    "user_exists": True,
+                    "otp_created": False,
+                    "otp_token": None,
+                },
+                status=503,
+            )
+
         otp_token = secrets.token_urlsafe(32)
 
-        # Invalidate all previous unconsumed login OTPs for this user.
+        # Invalidate previous unconsumed OTPs for the same user.
         LoginOTP.objects.filter(
             user=user,
             consumed_at__isnull=True,
@@ -307,8 +378,6 @@ class RequestOTPView(APIView):
             ).encode()
         ).hexdigest()
 
-        # The token returned to the frontend is never stored in plaintext.
-        # Only its SHA-256 hash is persisted.
         otp = LoginOTP.objects.create(
             user=user,
             code_hash=make_password(code),
@@ -317,13 +386,17 @@ class RequestOTPView(APIView):
             request_ip_hash=ip_hash,
         )
 
-        try:
-            dispatch_sms(phone, code, otp.pk)
-        except Exception:
-            # Preserve the row for audit/debugging, but make it unusable.
-            otp.consumed_at = timezone.now()
-            otp.save(update_fields=["consumed_at"])
-            raise
+        if delivery_mode == "sms":
+            try:
+                dispatch_sms(phone, code, otp.pk)
+            except Exception:
+                # Keep the failed record for audit/debugging but make it unusable.
+                otp.consumed_at = timezone.now()
+                otp.save(update_fields=["consumed_at"])
+                raise
+        else:
+            # No SMS gateway is called in mock mode.
+            print(f"[Myraid mock OTP] {phone}: {code}")
 
         audit(
             actor=user,
@@ -333,13 +406,23 @@ class RequestOTPView(APIView):
             request=request,
         )
 
-        # otp_token is returned ONLY after LoginOTP.objects.create() succeeds.
-        return Response(
-            {
-                "message": "A sign-in code has been sent.",
-                "otp_token": otp_token,
-            }
-        )
+        response_payload = {
+            "message": (
+                "Mock OTP created successfully."
+                if delivery_mode == "mock"
+                else "A sign-in code has been sent."
+            ),
+            "user_exists": True,
+            "otp_created": True,
+            "otp_token": otp_token,
+            "delivery_mode": delivery_mode,
+        }
+
+        # Return the actual code only in explicit mock mode.
+        if delivery_mode == "mock":
+            response_payload["mock_otp"] = code
+
+        return Response(response_payload)
 
 
 class VerifyOTPView(APIView):
