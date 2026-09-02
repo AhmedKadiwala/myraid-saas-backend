@@ -26,8 +26,20 @@ class UserManager(BaseUserManager):
     def create_superuser(self, email, password=None, **extra_fields):
         extra_fields.setdefault("is_staff", True)
         extra_fields.setdefault("is_superuser", True)
-        if not extra_fields["is_staff"] or not extra_fields["is_superuser"]:
-            raise ValueError("Superusers must be staff and superuser")
+
+        # Platform superusers are always administrators.
+        extra_fields.setdefault("department", "admin")
+        extra_fields.setdefault("platform_admin", True)
+
+        if not extra_fields["is_staff"]:
+            raise ValueError("Superuser must have is_staff=True.")
+
+        if not extra_fields["is_superuser"]:
+            raise ValueError("Superuser must have is_superuser=True.")
+
+        if not extra_fields["platform_admin"]:
+            raise ValueError("Superuser must have platform_admin=True.")
+
         return self._create_user(email, password, **extra_fields)
 
 
