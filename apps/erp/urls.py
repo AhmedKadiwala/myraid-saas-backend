@@ -22,7 +22,7 @@ for prefix, view in [
 urlpatterns = [
     path("onboard/",onboarding.OnboardView.as_view()),
     path("companies/",onboarding.AddCompanyView.as_view()),
-    path("auth/otp/request/",otp.RequestOTPView.as_view()),path("auth/otp/verify/",otp.VerifyOTPView.as_view()),
+    path("auth/otp/request-otp/",otp.RequestOTPView.as_view()),path("auth/otp/verify-otp/",otp.VerifyOTPView.as_view()),
     path("bootstrap/",w.BootstrapView.as_view()),path("dashboard/",w.DashboardView.as_view()),
     path("profitability/",w.ProfitabilityView.as_view()),path("facts/",w.FactsView.as_view()),
     path("calculate/",w.CalculationView.as_view()),path("settings/",w.SettingsView.as_view()),

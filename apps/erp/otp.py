@@ -7,6 +7,7 @@ from django.contrib.auth.hashers import make_password,check_password
 from django.db import transaction, models
 from django.utils import timezone
 from rest_framework.views import APIView
+from rest_framework import serializers
 from rest_framework.permissions import AllowAny
 from rest_framework.throttling import AnonRateThrottle
 from rest_framework.exceptions import ValidationError
@@ -20,6 +21,22 @@ from .models import LoginOTP
 
 class RequestThrottle(AnonRateThrottle):rate="6/hour"
 class VerifyThrottle(AnonRateThrottle):rate="20/hour"
+
+
+class OTPRequestSerializer(serializers.Serializer):
+    phone = serializers.CharField(required=True, allow_blank=False, trim_whitespace=True)
+
+    def validate_phone(self, value):
+        return normalize_phone(value)
+
+
+class OTPVerifySerializer(OTPRequestSerializer):
+    code = serializers.CharField(required=True, allow_blank=False, trim_whitespace=True)
+
+    def validate_code(self, value):
+        if not value.isdigit() or len(value) != 6:
+            raise serializers.ValidationError("Enter the 6-digit code.")
+        return value
 
 
 def user_payload(user):
@@ -50,7 +67,8 @@ def dispatch_sms(phone,code,otp_id):
 class RequestOTPView(APIView):
     authentication_classes=[];permission_classes=[AllowAny];throttle_classes=[RequestThrottle]
     def post(self,request):
-        phone=normalize_phone(request.data.get("phone"));digits=phone[-10:]
+        serializer=OTPRequestSerializer(data=request.data);serializer.is_valid(raise_exception=True)
+        phone=serializer.validated_data["phone"];digits=phone[-10:]
         phone_key="otp-phone:"+hashlib.sha256(phone.encode()).hexdigest()
         count=cache.get(phone_key,0)
         if count>=10:return Response({"message":"Too many OTP requests. Please wait before trying again."},status=429)
@@ -74,8 +92,8 @@ class VerifyOTPView(APIView):
     authentication_classes=[];permission_classes=[AllowAny];throttle_classes=[VerifyThrottle]
     @transaction.atomic
     def post(self,request):
-        phone=normalize_phone(request.data.get("phone"));code=str(request.data.get("code","")).strip()
-        if not code.isdigit() or len(code)!=6:raise ValidationError({"code":"Enter the 6-digit code."})
+        serializer=OTPVerifySerializer(data=request.data);serializer.is_valid(raise_exception=True)
+        phone=serializer.validated_data["phone"];code=serializer.validated_data["code"]
         digits=phone[-10:]
         user=User.objects.filter(is_active=True).filter(models.Q(phone_e164=phone)|models.Q(phone=digits)|models.Q(phone=phone)).first()
         otp=LoginOTP.objects.select_for_update().filter(user=user,consumed_at__isnull=True,expires_at__gt=timezone.now()).order_by("-created_at").first() if user else None

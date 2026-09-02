@@ -299,14 +299,31 @@ class PhoneOTPTestCase(TestCase):
         self.user=User.objects.create_user(email="internal@phone.myraid.invalid",phone="9876543210",password=None,first_name="Multi Role")
         TenantMembership.objects.create(tenant=self.tenant,user=self.user,default_branch=self.branch1)
 
+    def test_otp_request_requires_phone_body(self):
+        api=APIClient()
+        request=api.post("/api/v1/erp/auth/otp/request-otp/",{},format="json")
+        self.assertEqual(request.status_code,400,request.data)
+        self.assertIn("phone",request.data["error"])
+        self.assertFalse(m.LoginOTP.objects.exists())
+
+    def test_otp_verify_requires_phone_and_code_body(self):
+        api=APIClient()
+        missing_all=api.post("/api/v1/erp/auth/otp/verify-otp/",{},format="json")
+        self.assertEqual(missing_all.status_code,400,missing_all.data)
+        self.assertIn("phone",missing_all.data["error"])
+        self.assertIn("code",missing_all.data["error"])
+        missing_code=api.post("/api/v1/erp/auth/otp/verify-otp/",{"phone":"+919876543210"},format="json")
+        self.assertEqual(missing_code.status_code,400,missing_code.data)
+        self.assertIn("code",missing_code.data["error"])
+
     @override_settings(ERP_SMS_ENABLED=True,DEBUG=True,MSG91_AUTH_KEY="")
     @patch("apps.erp.otp.secrets.randbelow",return_value=654321)
     def test_phone_otp_is_hashed_single_use_and_sets_session(self,_random):
-        api=APIClient();request=api.post("/api/v1/erp/auth/otp/request/",{"phone":"98765 43210"},format="json")
+        api=APIClient();request=api.post("/api/v1/erp/auth/otp/request-otp/",{"phone":"98765 43210"},format="json")
         self.assertEqual(request.status_code,200,request.data);otp=m.LoginOTP.objects.get();self.assertNotIn("654321",otp.code_hash);self.assertTrue(check_password("654321",otp.code_hash))
-        bad=api.post("/api/v1/erp/auth/otp/verify/",{"phone":"+919876543210","code":"000000"},format="json");self.assertEqual(bad.status_code,400)
-        verified=api.post("/api/v1/erp/auth/otp/verify/",{"phone":"+919876543210","code":"654321"},format="json");self.assertEqual(verified.status_code,200,verified.data);self.assertIn("access_token",verified.cookies)
-        reused=api.post("/api/v1/erp/auth/otp/verify/",{"phone":"+919876543210","code":"654321"},format="json");self.assertEqual(reused.status_code,400)
+        bad=api.post("/api/v1/erp/auth/otp/verify-otp/",{"phone":"+919876543210","code":"000000"},format="json");self.assertEqual(bad.status_code,400)
+        verified=api.post("/api/v1/erp/auth/otp/verify-otp/",{"phone":"+919876543210","code":"654321"},format="json");self.assertEqual(verified.status_code,200,verified.data);self.assertIn("access_token",verified.cookies)
+        reused=api.post("/api/v1/erp/auth/otp/verify-otp/",{"phone":"+919876543210","code":"654321"},format="json");self.assertEqual(reused.status_code,400)
 
     def test_same_phone_user_has_different_role_in_different_companies(self):
         for code,module in [("workspace.view","workspace"),("item.view","item"),("payment.record","payment")]:
