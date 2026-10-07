@@ -267,6 +267,13 @@ class DocumentViewSet(ERPViewSet):
         return self.run_command(request, reverse)
 
 
+class SalesPipelineViewSet(DocumentViewSet):
+    http_method_names = ["get", "post", "head", "options"]
+
+    def doc_kind(self):
+        return "quotation"
+
+
 class JobViewSet(ERPViewSet):
     queryset = m.Job.objects.select_related("customer", "source_order", "department", "owner").prefetch_related("stages")
     serializer_class = s.JobSerializer; feature = "work_orders"; permission_prefix = "job"

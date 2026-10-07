@@ -3,7 +3,12 @@ from django.utils import timezone
 from rest_framework.exceptions import PermissionDenied
 
 from apps.core.models import TenantMembership, UserRole
-from apps.core.services import resolve_branch, resolve_tenant
+from apps.core.services import (
+    VIEW_IMPLYING_ACTIONS,
+    expand_implied_permissions,
+    resolve_branch,
+    resolve_tenant,
+)
 from .models import Entitlement
 
 
@@ -35,10 +40,17 @@ def require_feature(tenant, feature):
 def assignments(request, permission):
     now = timezone.now()
     credential=getattr(request,"api_credential",None)
-    if credential and permission not in credential.permissions:return UserRole.objects.none()
-    rows=UserRole.objects.filter(tenant=request.tenant, user=request.user, is_active=True, branch__isnull=True, role__is_active=True,
-        role__permission_links__permission__code=permission, role__permission_links__permission__is_active=True
+    wanted={permission}
+    if permission.endswith(".view"):
+        prefix=permission.rsplit(".",1)[0]
+        wanted={permission, *(f"{prefix}.{action}" for action in VIEW_IMPLYING_ACTIONS)}
+    if credential and permission not in expand_implied_permissions(credential.permissions):return UserRole.objects.none()
+    branch_filter=Q(branch__isnull=True)
+    if getattr(request,"branch",None):branch_filter|=Q(branch=request.branch)
+    rows=UserRole.objects.filter(tenant=request.tenant, user=request.user, is_active=True, role__is_active=True,
+        role__permission_links__permission__code__in=wanted, role__permission_links__permission__is_active=True
     ).filter(Q(valid_from__isnull=True) | Q(valid_from__lte=now), Q(valid_to__isnull=True) | Q(valid_to__gt=now))
+    rows=rows.filter(branch_filter)
     return rows
 
 

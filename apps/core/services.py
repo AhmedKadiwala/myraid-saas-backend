@@ -13,6 +13,48 @@ from .models import (
 
 PERMISSION_CACHE_SECONDS = 30
 
+VIEW_IMPLYING_ACTIONS = {
+    "add",
+    "approve",
+    "cancel",
+    "checkin",
+    "convert",
+    "copy",
+    "create",
+    "decide",
+    "delete",
+    "destroy",
+    "edit",
+    "export",
+    "finalize",
+    "inward",
+    "issue",
+    "manage",
+    "post",
+    "progress",
+    "receive",
+    "record",
+    "record_payment",
+    "reserve",
+    "share",
+    "transfer",
+    "upload",
+    "void",
+}
+
+
+def expand_implied_permissions(codes):
+    expanded = set(codes)
+    if "*" in expanded:
+        return expanded
+    for code in list(expanded):
+        if "." not in code:
+            continue
+        resource, action = code.rsplit(".", 1)
+        if action in VIEW_IMPLYING_ACTIONS:
+            expanded.add(f"{resource}.view")
+    return expanded
+
 
 def resolve_tenant(request, required=True):
     if getattr(request.user, "is_superuser", False) or getattr(
@@ -95,6 +137,7 @@ def effective_permissions(user, tenant, branch=None, at=None):
     ).exists()
     if membership:
         codes.update({"tenant.manage", "staff.manage", "roles.assign", "audit.view"})
+    codes = expand_implied_permissions(codes)
     cache.set(key, sorted(codes), PERMISSION_CACHE_SECONDS)
     return codes
 

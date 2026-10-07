@@ -7,6 +7,7 @@ for prefix, view in [
     ("items",v.ItemViewSet),("customers",v.CustomerViewSet),("suppliers",v.SupplierViewSet),
     ("warehouses",v.WarehouseViewSet),("bins",v.BinViewSet),("departments",v.DepartmentViewSet),
     ("cost-centers",v.CostCenterViewSet),("documents",v.DocumentViewSet),("jobs",v.JobViewSet),
+    ("sales-pipeline",v.SalesPipelineViewSet),
     ("stock",v.StockViewSet),("stock-movements",v.MovementViewSet),("expense-categories",v.ExpenseCategoryViewSet),
     ("expenses",v.ExpenseViewSet),("recurring-expenses",v.RecurringViewSet),("payments",v.PaymentViewSet),
     ("employees",v.EmployeeViewSet),("shifts",v.ShiftViewSet),("holidays",v.HolidayViewSet),

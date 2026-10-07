@@ -265,6 +265,7 @@ class WebhookSerializer(ScopedSerializer):
 
 class CustomerSerializer(serializers.ModelSerializer):
     label = serializers.CharField(source="name", read_only=True)
+    address = serializers.CharField(required=False, allow_blank=True)
     contact_name = serializers.CharField(required=False, allow_blank=True)
     email = serializers.EmailField(required=False, allow_blank=True)
     phone = serializers.CharField(required=False, allow_blank=True)

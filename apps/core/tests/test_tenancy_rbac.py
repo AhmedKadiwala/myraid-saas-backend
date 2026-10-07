@@ -63,8 +63,15 @@ class TenantRBACTestCase(TestCase):
         UserRole.objects.create(tenant=self.a, user=self.user, role=creator)
         self.assertEqual(
             effective_permissions(self.user, self.a),
-            {"lead.add"},
+            {"lead.add", "lead.view"},
         )
+
+    def test_mutating_permission_implies_view_permission(self):
+        creator = self.role("creator", self.permission_add, self.a)
+        UserRole.objects.create(tenant=self.a, user=self.user, role=creator)
+        permissions = effective_permissions(self.user, self.a)
+        self.assertIn("lead.add", permissions)
+        self.assertIn("lead.view", permissions)
 
     def test_temporary_roles_respect_validity_window(self):
         role = self.role("temp", self.permission_add, self.a)
