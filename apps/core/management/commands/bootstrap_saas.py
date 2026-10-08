@@ -1,8 +1,6 @@
-import os
-
 from django.core.management.base import BaseCommand
 from django.db import transaction
-from django_celery_beat.models import IntervalSchedule, PeriodicTask
+from django_celery_beat.models import CrontabSchedule, IntervalSchedule, PeriodicTask
 
 from apps.core.models import (
     Branch,
@@ -121,77 +119,75 @@ class Command(BaseCommand):
         if not assignment.is_active:
             assignment.is_active=True
             assignment.save(update_fields=["is_active","updated_at"])
-        background_jobs_enabled = os.getenv("MYRAID_ENABLE_BACKGROUND_JOBS") == "1"
-        optional_jobs_enabled = os.getenv("MYRAID_ENABLE_OPTIONAL_BACKGROUND_JOBS") == "1"
         every_five_minutes, _ = IntervalSchedule.objects.get_or_create(
             every=5, period=IntervalSchedule.MINUTES
-        )
-        hourly, _ = IntervalSchedule.objects.get_or_create(
-            every=1, period=IntervalSchedule.HOURS
         )
         daily, _ = IntervalSchedule.objects.get_or_create(
             every=1, period=IntervalSchedule.DAYS
         )
+        monthly, _ = CrontabSchedule.objects.get_or_create(
+            minute="0",
+            hour="3",
+            day_of_week="*",
+            day_of_month="1",
+            month_of_year="*",
+        )
 
-        def schedule_task(name, task, interval, enabled=False):
+        def schedule_task(name, task, *, interval=None, crontab=None, enabled=False):
             PeriodicTask.objects.update_or_create(
                 name=name,
                 defaults={
                     "interval": interval,
+                    "crontab": crontab,
+                    "solar": None,
+                    "clocked": None,
                     "task": task,
                     "enabled": enabled,
                 },
             )
 
+        PeriodicTask.objects.filter(name="Run low-cost SaaS maintenance").delete()
         schedule_task(
             "Dispatch due CRM notifications",
             "apps.core.tasks.dispatch_due_notifications",
-            every_five_minutes,
-            background_jobs_enabled,
+            interval=every_five_minutes,
+            enabled=False,
         )
         schedule_task(
-            "Run low-cost SaaS maintenance",
-            "apps.core.tasks.run_low_cost_maintenance",
-            daily,
-            background_jobs_enabled,
-        )
-        PeriodicTask.objects.update_or_create(
-            name="Enforce subscription renewal status",
-            defaults={
-                "interval": daily,
-                "task": "apps.core.tasks.enforce_subscription_statuses",
-                "enabled": False,
-            },
+            "Enforce subscription renewal status",
+            "apps.core.tasks.enforce_subscription_statuses",
+            interval=daily,
+            enabled=False,
         )
         schedule_task(
             "Process ERP outbox",
             "apps.erp.tasks.process_erp_outbox",
-            every_five_minutes,
-            background_jobs_enabled,
+            interval=every_five_minutes,
+            enabled=False,
         )
         schedule_task(
             "Generate due ERP recurring expenses",
             "apps.erp.tasks.generate_due_recurring_expenses",
-            hourly,
-            False,
+            interval=daily,
+            enabled=True,
         )
         schedule_task(
             "Run ERP scheduled reports",
             "apps.erp.tasks.run_erp_schedules",
-            daily,
-            optional_jobs_enabled,
+            interval=daily,
+            enabled=True,
         )
         schedule_task(
             "Deliver ERP webhooks",
             "apps.erp.tasks.deliver_erp_webhooks",
-            every_five_minutes,
-            optional_jobs_enabled,
+            interval=every_five_minutes,
+            enabled=False,
         )
         schedule_task(
             "Purge expired Myraid login OTPs",
             "apps.erp.tasks.purge_expired_login_otps",
-            daily,
-            False,
+            crontab=monthly,
+            enabled=True,
         )
         self.stdout.write(self.style.SUCCESS(
             f"Bootstrapped tenant={tenant.slug} admin={user.email} "

@@ -58,13 +58,3 @@ def enforce_subscription_statuses():
         count += 1
     return count
 
-
-@shared_task
-def run_low_cost_maintenance():
-    from apps.erp.tasks import generate_due_recurring_expenses, purge_expired_login_otps
-
-    return {
-        "subscriptions_marked_past_due": enforce_subscription_statuses(),
-        "recurring_expenses_generated": generate_due_recurring_expenses(),
-        "expired_otps_deleted": purge_expired_login_otps(),
-    }

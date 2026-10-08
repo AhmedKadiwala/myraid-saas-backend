@@ -47,19 +47,10 @@ Redis is optional for first boot. Add `REDIS_URL` and change `CACHE_BACKEND` to
 `django.core.cache.backends.redis.RedisCache` when Celery/Beat should run with a
 shared production cache.
 
-Background workers are intentionally opt-in for low-cost plans. By default,
-`bootstrap_saas` creates periodic task definitions but keeps them disabled so
-the app can run as a single Gunicorn web service. Enable these only after adding
-a Celery worker and Beat process:
-
-```text
-MYRAID_ENABLE_BACKGROUND_JOBS=1
-MYRAID_ENABLE_OPTIONAL_BACKGROUND_JOBS=1
-```
-
-`MYRAID_ENABLE_BACKGROUND_JOBS` enables essential delayed delivery and daily
-maintenance. `MYRAID_ENABLE_OPTIONAL_BACKGROUND_JOBS` enables heavier paid-plan
-automation such as scheduled reports and outbound webhooks.
+Background workers are intentionally minimal for low-cost plans. `bootstrap_saas`
+keeps integration-style tasks disabled, runs scheduled reports and recurring
+expense generation daily, and purges expired login OTPs monthly. Enable disabled
+tasks manually only when a customer plan justifies the extra worker activity.
 
 To keep a free Render service and Neon compute warm, enable the included
 `.github/workflows/keepalive.yml` workflow and add this repository secret:
