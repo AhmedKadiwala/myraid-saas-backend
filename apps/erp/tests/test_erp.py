@@ -74,8 +74,15 @@ class ERPTestCase(TestCase):
         self.assertEqual(self.api.get("/api/v1/erp/stock/").status_code,403)
 
     def test_missing_permission_denied(self):
-        RolePermission.objects.filter(role=self.role,permission__code="item.view").delete()
+        TenantMembership.objects.filter(tenant=self.tenant,user=self.user).update(is_tenant_admin=False)
+        cache.clear()
+        RolePermission.objects.filter(role=self.role,permission__code__startswith="item.").delete()
         self.assertEqual(self.api.get("/api/v1/erp/items/").status_code,403)
+
+    def test_tenant_admin_can_access_erp_module_without_role_permission(self):
+        RolePermission.objects.filter(role=self.role,permission__code="item.view").delete()
+        cache.clear()
+        self.assertEqual(self.api.get("/api/v1/erp/items/").status_code,200)
 
     def test_cross_tenant_item_detail_hidden(self):
         hidden=m.Item.objects.create(tenant=self.other,sku="HIDDEN",name="Hidden")

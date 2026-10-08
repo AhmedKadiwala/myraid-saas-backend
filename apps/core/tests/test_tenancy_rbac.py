@@ -73,6 +73,20 @@ class TenantRBACTestCase(TestCase):
         self.assertIn("lead.add", permissions)
         self.assertIn("lead.view", permissions)
 
+    def test_tenant_admin_receives_every_active_business_permission(self):
+        BusinessPermission.objects.create(
+            code="payroll.finalize", name="Finalize payroll", module="payroll"
+        )
+        TenantMembership.objects.filter(tenant=self.a, user=self.user).update(
+            is_tenant_admin=True
+        )
+
+        permissions = effective_permissions(self.user, self.a)
+
+        self.assertIn("lead.view", permissions)
+        self.assertIn("lead.add", permissions)
+        self.assertIn("payroll.finalize", permissions)
+
     def test_temporary_roles_respect_validity_window(self):
         role = self.role("temp", self.permission_add, self.a)
         now = timezone.now()

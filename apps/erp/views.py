@@ -14,6 +14,7 @@ from rest_framework.response import Response
 from rest_framework.pagination import PageNumberPagination
 
 from apps.core.models import Branch, Company, Tenant, TenantMembership, Role, RolePermission, BusinessPermission, UserRole
+from apps.core.services import is_tenant_admin
 from . import models as m, serializers as s, services as svc, workforce
 from .catalog import DOCUMENT_FEATURES, DOCUMENT_PERMISSION, FEATURES, price_quote
 from .security import context, authorize, scope, features, require_feature, has_permission, assignments
@@ -68,6 +69,12 @@ class ERPViewSet(viewsets.ModelViewSet):
 
     def checked_branch(self, serializer):
         branch = serializer.validated_data.get("branch") or self.request.branch
+        if is_tenant_admin(self.request.user, self.request.tenant):
+            if branch and branch.tenant_id != self.request.tenant.id:
+                raise PermissionDenied("You cannot create records in this branch.")
+            return branch or Branch.objects.filter(
+                tenant=self.request.tenant, is_active=True
+            ).first()
         if not branch:
             branch = Branch.objects.filter(tenant=self.request.tenant, is_active=True).filter(
                 Q(pk__in=assignments(self.request, self.permission_code()).values("branch_id"))
@@ -634,7 +641,7 @@ class ApprovalViewSet(ERPViewSet):
             if obj.created_by_id == request.user.pk and not obj.allow_self: raise PermissionDenied("Self-approval is not allowed by this policy.")
             if obj.steps:
                 role_code = obj.steps[obj.current_step]
-                if not assignments(request, "approval.decide").filter(role__code=role_code).exists(): raise PermissionDenied("You are not an approver for the current step.")
+                if not is_tenant_admin(request.user, request.tenant) and not assignments(request, "approval.decide").filter(role__code=role_code).exists(): raise PermissionDenied("You are not an approver for the current step.")
             model = {"document": m.Document, "expense": m.Expense}.get(obj.resource_type)
             if not model: raise ValidationError("Unsupported approval resource.")
             resource = model.objects.select_for_update().get(tenant=request.tenant, pk=obj.resource_id)

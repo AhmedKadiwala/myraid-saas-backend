@@ -6,6 +6,7 @@ from rest_framework.exceptions import PermissionDenied, ValidationError
 from .models import (
     AuditLog,
     Branch,
+    BusinessPermission,
     Tenant,
     TenantMembership,
     UserRole,
@@ -106,6 +107,14 @@ def permission_cache_key(user_id, tenant_id, branch_id):
     return f"rbac:v1:{tenant_id}:{user_id}:{branch_id or 'global'}"
 
 
+def is_tenant_admin(user, tenant):
+    if not user or not tenant:
+        return False
+    return TenantMembership.objects.filter(
+        tenant=tenant, user=user, is_active=True, is_tenant_admin=True
+    ).exists()
+
+
 def effective_permissions(user, tenant, branch=None, at=None):
     if user.is_superuser or user.platform_admin:
         return {"*"}
@@ -132,10 +141,12 @@ def effective_permissions(user, tenant, branch=None, at=None):
             "role__permission_links__permission__code", flat=True
         ).distinct()
     )
-    membership = TenantMembership.objects.filter(
-        tenant=tenant, user=user, is_active=True, is_tenant_admin=True
-    ).exists()
-    if membership:
+    if is_tenant_admin(user, tenant):
+        codes.update(
+            BusinessPermission.objects.filter(is_active=True).values_list(
+                "code", flat=True
+            )
+        )
         codes.update({"tenant.manage", "staff.manage", "roles.assign", "audit.view"})
     codes = expand_implied_permissions(codes)
     cache.set(key, sorted(codes), PERMISSION_CACHE_SECONDS)
@@ -143,6 +154,8 @@ def effective_permissions(user, tenant, branch=None, at=None):
 
 
 def has_business_permission(user, tenant, code, branch=None):
+    if is_tenant_admin(user, tenant):
+        return True
     codes = effective_permissions(user, tenant, branch)
     return "*" in codes or code in codes
 
@@ -159,9 +172,7 @@ def enforce_tenant_admin(request):
     tenant = resolve_tenant(request)
     if request.user.is_superuser or request.user.platform_admin:
         return tenant
-    if not TenantMembership.objects.filter(
-        tenant=tenant, user=request.user, is_active=True, is_tenant_admin=True
-    ).exists():
+    if not is_tenant_admin(request.user, tenant):
         raise PermissionDenied("Tenant administrator access required.")
     return tenant
 

@@ -6,6 +6,7 @@ from apps.core.models import TenantMembership, UserRole
 from apps.core.services import (
     VIEW_IMPLYING_ACTIONS,
     expand_implied_permissions,
+    is_tenant_admin,
     resolve_branch,
     resolve_tenant,
 )
@@ -55,6 +56,9 @@ def assignments(request, permission):
 
 
 def scope(request, permission):
+    credential = getattr(request, "api_credential", None)
+    if not credential and is_tenant_admin(request.user, request.tenant):
+        return Q()
     rows = assignments(request, permission)
     if rows.filter(branch__isnull=True).exists():
         return Q()
@@ -75,4 +79,7 @@ def authorize(request, permission, obj=None, feature="basic"):
 
 
 def has_permission(request, permission):
+    credential = getattr(request, "api_credential", None)
+    if not credential and is_tenant_admin(request.user, request.tenant):
+        return True
     return assignments(request, permission).exists()
