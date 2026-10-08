@@ -1,3 +1,5 @@
+import os
+
 from django.core.management.base import BaseCommand
 from django.db import transaction
 from django_celery_beat.models import IntervalSchedule, PeriodicTask
@@ -119,33 +121,78 @@ class Command(BaseCommand):
         if not assignment.is_active:
             assignment.is_active=True
             assignment.save(update_fields=["is_active","updated_at"])
-        every_minute, _ = IntervalSchedule.objects.get_or_create(
-            every=1, period=IntervalSchedule.MINUTES
+        background_jobs_enabled = os.getenv("MYRAID_ENABLE_BACKGROUND_JOBS") == "1"
+        optional_jobs_enabled = os.getenv("MYRAID_ENABLE_OPTIONAL_BACKGROUND_JOBS") == "1"
+        every_five_minutes, _ = IntervalSchedule.objects.get_or_create(
+            every=5, period=IntervalSchedule.MINUTES
         )
         hourly, _ = IntervalSchedule.objects.get_or_create(
             every=1, period=IntervalSchedule.HOURS
         )
-        PeriodicTask.objects.update_or_create(
-            name="Dispatch due CRM notifications",
-            defaults={
-                "interval": every_minute,
-                "task": "apps.core.tasks.dispatch_due_notifications",
-                "enabled": True,
-            },
+        daily, _ = IntervalSchedule.objects.get_or_create(
+            every=1, period=IntervalSchedule.DAYS
+        )
+
+        def schedule_task(name, task, interval, enabled=False):
+            PeriodicTask.objects.update_or_create(
+                name=name,
+                defaults={
+                    "interval": interval,
+                    "task": task,
+                    "enabled": enabled,
+                },
+            )
+
+        schedule_task(
+            "Dispatch due CRM notifications",
+            "apps.core.tasks.dispatch_due_notifications",
+            every_five_minutes,
+            background_jobs_enabled,
+        )
+        schedule_task(
+            "Run low-cost SaaS maintenance",
+            "apps.core.tasks.run_low_cost_maintenance",
+            daily,
+            background_jobs_enabled,
         )
         PeriodicTask.objects.update_or_create(
             name="Enforce subscription renewal status",
             defaults={
-                "interval": hourly,
+                "interval": daily,
                 "task": "apps.core.tasks.enforce_subscription_statuses",
-                "enabled": True,
+                "enabled": False,
             },
         )
-        PeriodicTask.objects.update_or_create(name="Process ERP outbox",defaults={"interval":every_minute,"task":"apps.erp.tasks.process_erp_outbox","enabled":True})
-        PeriodicTask.objects.update_or_create(name="Generate due ERP recurring expenses",defaults={"interval":hourly,"task":"apps.erp.tasks.generate_due_recurring_expenses","enabled":True})
-        PeriodicTask.objects.update_or_create(name="Run ERP scheduled reports",defaults={"interval":hourly,"task":"apps.erp.tasks.run_erp_schedules","enabled":True})
-        PeriodicTask.objects.update_or_create(name="Deliver ERP webhooks",defaults={"interval":every_minute,"task":"apps.erp.tasks.deliver_erp_webhooks","enabled":True})
-        PeriodicTask.objects.update_or_create(name="Purge expired Myraid login OTPs",defaults={"interval":hourly,"task":"apps.erp.tasks.purge_expired_login_otps","enabled":True})
+        schedule_task(
+            "Process ERP outbox",
+            "apps.erp.tasks.process_erp_outbox",
+            every_five_minutes,
+            background_jobs_enabled,
+        )
+        schedule_task(
+            "Generate due ERP recurring expenses",
+            "apps.erp.tasks.generate_due_recurring_expenses",
+            hourly,
+            False,
+        )
+        schedule_task(
+            "Run ERP scheduled reports",
+            "apps.erp.tasks.run_erp_schedules",
+            daily,
+            optional_jobs_enabled,
+        )
+        schedule_task(
+            "Deliver ERP webhooks",
+            "apps.erp.tasks.deliver_erp_webhooks",
+            every_five_minutes,
+            optional_jobs_enabled,
+        )
+        schedule_task(
+            "Purge expired Myraid login OTPs",
+            "apps.erp.tasks.purge_expired_login_otps",
+            daily,
+            False,
+        )
         self.stdout.write(self.style.SUCCESS(
             f"Bootstrapped tenant={tenant.slug} admin={user.email} "
             f"tenant_id={tenant.pk}"
