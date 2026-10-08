@@ -8,7 +8,191 @@ from .models import User
 
 admin.site.site_header = "Myraid SaaS Administration"
 admin.site.site_title = "Myraid Admin"
-admin.site.index_title = "Myraid SaaS / ERP Management"
+admin.site.index_title = "Myraid Administration"
+
+
+ADMIN_INDEX_SECTIONS = (
+    (
+        "Accounts & Access",
+        (
+            "auth.Group",
+            "core.User",
+            "core.TenantMembership",
+            "core.BusinessPermission",
+            "core.Role",
+            "core.RolePermission",
+            "core.UserRole",
+            "erp.LoginOTP",
+        ),
+    ),
+    (
+        "Tenants & Billing",
+        (
+            "core.SubscriptionPlan",
+            "core.Tenant",
+            "core.Branch",
+            "core.TenantSettings",
+            "core.TenantSubscription",
+            "core.Invoice",
+            "core.UsageCounter",
+            "core.AuditLog",
+        ),
+    ),
+    (
+        "CRM: Companies & Contacts",
+        (
+            "core.Company",
+            "core.Client",
+            "core.ClientEmail",
+            "core.ClientPhone",
+            "core.Source",
+            "core.Product",
+        ),
+    ),
+    (
+        "CRM: Sales Pipeline",
+        (
+            "core.Lead",
+            "core.Deal",
+            "core.Description",
+            "core.Notification",
+            "core.NotificationRecipient",
+        ),
+    ),
+    (
+        "CRM: Quotations & Orders",
+        (
+            "core.BaseProduct",
+            "core.Quotation",
+            "core.QuotationProduct",
+            "core.QuotationItem",
+            "core.QuotationWorking",
+            "core.Order",
+            "core.Advance",
+            "core.ColourChange",
+            "core.Drawing",
+        ),
+    ),
+    (
+        "ERP: Setup & Controls",
+        (
+            "erp.ErpSettings",
+            "erp.Entitlement",
+            "erp.NumberSeries",
+            "erp.Configuration",
+            "erp.PeriodLock",
+        ),
+    ),
+    (
+        "ERP: Masters",
+        (
+            "erp.Warehouse",
+            "erp.WarehouseBin",
+            "erp.Item",
+            "erp.Supplier",
+            "erp.CustomerProfile",
+            "erp.Department",
+            "erp.CostCenter",
+        ),
+    ),
+    (
+        "ERP: Sales, Purchase & Finance",
+        (
+            "erp.Document",
+            "erp.DocumentLine",
+            "erp.Payment",
+            "erp.PaymentAllocation",
+            "erp.ExpenseCategory",
+            "erp.RecurringExpense",
+            "erp.Expense",
+            "erp.ManagementFact",
+        ),
+    ),
+    (
+        "ERP: Inventory & Production",
+        (
+            "erp.Job",
+            "erp.JobStage",
+            "erp.StockBalance",
+            "erp.StockMovement",
+            "erp.Reservation",
+            "erp.StockPosition",
+            "erp.PositionMovement",
+            "erp.StockCount",
+            "erp.StockCountLine",
+        ),
+    ),
+    (
+        "ERP: HR & Payroll",
+        (
+            "erp.Shift",
+            "erp.Employee",
+            "erp.Attendance",
+            "erp.Holiday",
+            "erp.LeaveType",
+            "erp.LeaveRequest",
+            "erp.SalaryComponent",
+            "erp.EmployeeLoan",
+            "erp.PayrollRun",
+            "erp.PayrollResult",
+            "erp.SalaryPayment",
+        ),
+    ),
+    (
+        "ERP: Workflow & Documents",
+        (
+            "erp.Task",
+            "erp.TaskComment",
+            "erp.ApprovalRule",
+            "erp.Approval",
+            "erp.ApprovalDecision",
+            "erp.Attachment",
+            "erp.RenderedDocument",
+            "erp.DataJob",
+            "erp.ScheduledExecution",
+            "erp.Communication",
+        ),
+    ),
+    (
+        "ERP: Integrations & System",
+        (
+            "erp.ApiCredential",
+            "erp.WebhookEndpoint",
+            "erp.WebhookDelivery",
+            "erp.OutboxEvent",
+            "erp.CommandReceipt",
+        ),
+    ),
+    (
+        "Background Jobs",
+        (
+            "django_celery_beat.ClockedSchedule",
+            "django_celery_beat.CrontabSchedule",
+            "django_celery_beat.IntervalSchedule",
+            "django_celery_beat.PeriodicTask",
+            "django_celery_beat.SolarSchedule",
+        ),
+    ),
+    (
+        "Token Security",
+        (
+            "token_blacklist.BlacklistedToken",
+            "token_blacklist.OutstandingToken",
+        ),
+    ),
+)
+
+ADMIN_MODEL_DISPLAY_NAMES = {
+    "core.Branch": "Branches",
+    "core.Company": "Companies",
+    "core.TenantSettings": "Tenant settings",
+    "erp.ApiCredential": "API credentials",
+    "erp.ErpSettings": "ERP settings",
+    "erp.ExpenseCategory": "Expense categories",
+    "erp.LoginOTP": "Login OTPs",
+    "erp.NumberSeries": "Number series",
+    "erp.WebhookDelivery": "Webhook deliveries",
+}
 
 
 SENSITIVE_FIELD_NAMES = {
@@ -308,6 +492,83 @@ class MyraidUserAdmin(UserAdmin):
             },
         ),
     )
+
+
+def _admin_model_label(model_dict):
+    model = model_dict["model"]
+    return f"{model._meta.app_label}.{model._meta.object_name}"
+
+
+def _admin_model_for_index(model_dict):
+    model_label = _admin_model_label(model_dict)
+    display_name = ADMIN_MODEL_DISPLAY_NAMES.get(model_label)
+    if not display_name:
+        return model_dict
+
+    model_dict = model_dict.copy()
+    model_dict["name"] = display_name
+    return model_dict
+
+
+def _section_app(name, models):
+    return {
+        "name": name,
+        "app_label": name.lower().replace(" ", "_").replace(":", ""),
+        "app_url": None,
+        "has_module_perms": True,
+        "models": models,
+    }
+
+
+def get_grouped_admin_app_list(request, app_label=None):
+    """Group the admin index by business area instead of raw Django app."""
+
+    if app_label:
+        return admin.site._default_get_app_list(request, app_label)
+
+    app_dict = admin.site._build_app_dict(request)
+    available_models = {
+        _admin_model_label(model): _admin_model_for_index(model)
+        for app in app_dict.values()
+        for model in app["models"]
+    }
+
+    grouped = []
+    used_labels = set()
+    for section_name, model_labels in ADMIN_INDEX_SECTIONS:
+        section_models = [
+            available_models[label]
+            for label in model_labels
+            if label in available_models
+        ]
+        if not section_models:
+            continue
+
+        used_labels.update(
+            _admin_model_label(model)
+            for model in section_models
+        )
+        grouped.append(_section_app(section_name, section_models))
+
+    for app in sorted(app_dict.values(), key=lambda item: item["name"].lower()):
+        remaining_models = [
+            _admin_model_for_index(model)
+            for model in sorted(app["models"], key=lambda item: item["name"])
+            if _admin_model_label(model) not in used_labels
+        ]
+        if not remaining_models:
+            continue
+        grouped.append(_section_app(app["name"], remaining_models))
+
+    return grouped
+
+
+admin.site._default_get_app_list = getattr(
+    admin.site,
+    "_default_get_app_list",
+    admin.site.get_app_list,
+)
+admin.site.get_app_list = get_grouped_admin_app_list
 
 
 # Register every concrete model in apps.core that does not already have a custom admin.
