@@ -285,14 +285,16 @@ class ERPTestCase(TestCase):
 
 
 class OnboardingTestCase(TestCase):
-    def test_signup_creates_isolated_owner_and_selected_trial_modules(self):
+    def test_signup_creates_isolated_owner_and_all_trial_modules(self):
         api=APIClient()
         r=api.post("/api/v1/erp/onboard/",{"company_name":"New Industrial Co","name":"New Owner","phone":"8880000000","features":["purchase","inventory","hrms","payroll"]},format="json")
         self.assertEqual(r.status_code,201,r.data)
         tenant=Tenant.objects.get(name="New Industrial Co");owner=User.objects.get(phone_e164="+918880000000")
         self.assertTrue(TenantMembership.objects.filter(tenant=tenant,user=owner,is_tenant_admin=True).exists())
         self.assertTrue(UserRole.objects.filter(tenant=tenant,user=owner,role__code="tenant-admin").exists())
-        self.assertEqual(set(m.Entitlement.objects.filter(tenant=tenant,enabled=True).values_list("feature",flat=True)),{"purchase","inventory","hrms","payroll"})
+        from apps.erp.catalog import FEATURES
+        self.assertEqual(set(m.Entitlement.objects.filter(tenant=tenant,enabled=True).values_list("feature",flat=True)),set(FEATURES)-{"gst_integrations"})
+        self.assertEqual(tenant.plan.code,"erp-full-trial")
 
     def test_signup_rejects_dependency_violation(self):
         api=APIClient();r=api.post("/api/v1/erp/onboard/",{"company_name":"Bad","name":"Owner","phone":"7770000000","features":["payroll"]},format="json")

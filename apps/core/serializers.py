@@ -69,6 +69,15 @@ class SignupSerializer(serializers.ModelSerializer):
 
 
 class SubscriptionPlanSerializer(serializers.ModelSerializer):
+    def to_representation(self, instance):
+        from .admin_access import is_platform_owner, can_view_company_billing
+        data = super().to_representation(instance)
+        request = self.context.get("request")
+        if not request or not (is_platform_owner(request.user) or can_view_company_billing(request.user, getattr(request, "tenant", None))):
+            for key in ("price_monthly", "price_yearly"):
+                data.pop(key, None)
+        return data
+
     class Meta:
         model = SubscriptionPlan
         fields = "__all__"
@@ -83,6 +92,15 @@ class TenantSettingsSerializer(serializers.ModelSerializer):
 class TenantSerializer(serializers.ModelSerializer):
     settings = TenantSettingsSerializer(read_only=True)
     plan = SubscriptionPlanSerializer(read_only=True)
+
+    def to_representation(self, instance):
+        from .admin_access import can_view_company_billing
+        data = super().to_representation(instance)
+        request = self.context.get("request")
+        if not request or not can_view_company_billing(request.user, instance):
+            for key in ("agreed_monthly_price", "razorpay_customer_id"):
+                data.pop(key, None)
+        return data
 
     class Meta:
         model = Tenant

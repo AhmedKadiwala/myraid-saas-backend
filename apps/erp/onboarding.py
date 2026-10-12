@@ -11,7 +11,7 @@ from rest_framework import serializers
 from rest_framework.response import Response
 from apps.core.models import User,Tenant,TenantMembership,TenantSettings,SubscriptionPlan,Branch,Role,RolePermission,UserRole,BusinessPermission
 from apps.core.management.commands.bootstrap_saas import PERMISSIONS as SALES_PERMISSIONS
-from .catalog import PERMISSIONS,price_quote
+from .catalog import FEATURES,PERMISSIONS,price_quote
 from .models import ErpSettings,Entitlement
 from .otp import normalize_phone
 
@@ -37,14 +37,15 @@ def owner_role(tenant,user):
 
 def create_company_workspace(user,company_name,selected):
     price_quote(selected)  # Validate feature names/dependencies; public pricing is negotiated.
+    selected = [key for key in FEATURES if key != "gst_integrations"]
     quote={"pricing_mode":"negotiated","monthly":None,"currency":"INR","trial_days":settings.ERP_TRIAL_DAYS,"features":sorted(set(selected))}
-    plan,_=SubscriptionPlan.objects.get_or_create(code="erp-basic",defaults={"name":"ERP Basic","price_monthly":2999,"user_limit":5,"branch_limit":1,"storage_limit_mb":1024})
+    plan,_=SubscriptionPlan.objects.get_or_create(code="erp-full-trial",defaults={"name":"Full ERP access","price_monthly":0,"user_limit":50,"branch_limit":5,"storage_limit_mb":1024})
     slug=f"{slugify(company_name)[:45] or 'company'}-{uuid.uuid4().hex[:8]}";expiry=timezone.now()+timedelta(days=settings.ERP_TRIAL_DAYS)
     tenant=Tenant.objects.create(name=company_name,slug=slug,status="trial",plan=plan,trial_ends_at=expiry)
     branch=Branch.objects.create(tenant=tenant,name="Main branch",code="main")
     TenantMembership.objects.create(tenant=tenant,user=user,is_tenant_admin=True,default_branch=branch)
     TenantSettings.objects.create(tenant=tenant);ErpSettings.objects.create(tenant=tenant,legal_name=company_name);owner_role(tenant,user)
-    for feature in set(selected):Entitlement.objects.create(tenant=tenant,feature=feature,enabled=True,expires_at=expiry,reason="User-selected trial capability",changed_by=user)
+    for feature in set(selected):Entitlement.objects.create(tenant=tenant,feature=feature,enabled=True,expires_at=expiry,reason="All-module seven-day trial",changed_by=user)
     return tenant,expiry,quote
 
 

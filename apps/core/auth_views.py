@@ -58,6 +58,7 @@ class LoginView(APIView):
             "access": str(refresh.access_token),
             "refresh": str(refresh),
             "userData": {
+                "platform_admin": bool(user.platform_admin or user.is_superuser),
                 "department": user.department,
                 "name": user.get_full_name(),
                 "email": user.email,

@@ -25,6 +25,7 @@ DOCUMENT_PERMISSION = {
     "supplier_bill": "payable", "supplier_return": "purchase", "dispatch": "dispatch",
 }
 PERMISSIONS = {
+    "financial_statement": ["view", "export"],
     "workspace": ["view"], "item": ["view", "create", "edit", "export"],
     "customer": ["view", "create", "edit", "export"], "supplier": ["view", "create", "edit", "export"],
     "warehouse": ["view", "create", "edit"], "stock": ["view", "view_cost", "inward", "issue", "adjust", "transfer", "reserve", "export", "reverse"],

@@ -14,6 +14,7 @@ from rest_framework.exceptions import ValidationError, PermissionDenied
 from apps.core.models import Company, Branch, AuditLog, UserRole, TenantMembership, Role, BusinessPermission, Tenant
 from . import models as m, services as svc
 from .catalog import FEATURES, price_quote, DOCUMENT_FEATURES, DOCUMENT_PERMISSION
+from apps.core.admin_access import can_view_company_billing, require_company_admin
 from .security import context, features, authorize, scope, has_permission
 from .money import calculate_line, ZERO
 
@@ -73,7 +74,7 @@ class BootstrapView(WorkspaceAPI):
             "features": sorted(enabled), "permissions": sorted(set(codes)), "branches": list(branches.values("id", "name", "code")),
             "lookups": lookups, "settings": {"currency": settings.currency, "default_tax_rate": str(settings.default_tax_rate), "switches": settings.switches},
             "memberships": list(TenantMembership.objects.filter(user=request.user, is_active=True).values("tenant_id", "tenant__name", "is_tenant_admin")),
-            "catalog": [{"key": key, "name": value[0], "monthly_price": value[1], "dependencies": value[2], "enabled": key in enabled, "available": key != "gst_integrations"} for key, value in FEATURES.items()],
+            "catalog": [{"key": key, "name": value[0], **({"monthly_price": value[1]} if can_view_company_billing(request.user, request.tenant) else {}), "dependencies": value[2], "enabled": key in enabled, "available": key != "gst_integrations"} for key, value in FEATURES.items()],
             "is_platform_admin": bool(request.user.platform_admin),
             "custom_field_definitions": {
                 entity:[{"key":x.definition.get("key"),"label":x.definition.get("label") or x.name,"type":x.definition.get("type"),"options":x.definition.get("options",[]),"required":bool(x.definition.get("required"))}
@@ -174,6 +175,7 @@ class SettingsView(WorkspaceAPI):
     @transaction.atomic
     def patch(self, request):
         authorize(request, "settings.manage")
+        if "legal_name" in request.data: require_company_admin(request, request.tenant)
         obj, _ = m.ErpSettings.objects.select_for_update().get_or_create(tenant=request.tenant)
         svc.version_check(obj, request.data.get("version"))
         allowed = {"legal_name", "gstin", "address", "default_tax_rate", "switches", "numbering", "payroll_policy", "expected_expense_categories"}
@@ -187,6 +189,7 @@ class SettingsView(WorkspaceAPI):
 
 class EntitlementView(WorkspaceAPI):
     def post(self, request):
+        require_company_admin(request, request.tenant)
         authorize(request, "settings.view")
         return Response(price_quote(request.data.get("features", [])))
 

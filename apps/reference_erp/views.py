@@ -46,6 +46,7 @@ def filtered_state(request, member, state):
                            for item in state["items"]]
     if not has_permission(request, "stock.view_cost"):
         result["items"] = [{k: v for k, v in item.items() if k != "cost"} for item in result["items"]]
+        result["invoices"] = [{k:v for k,v in invoice.items() if k not in ("cogs","cost_basis")} for invoice in result["invoices"]]
     if any(c in user["collections"] for c in ("invoices", "payments", "jobs", "dispatches")) and "orders" not in user["collections"]:
         result["orders"] = [{k: v for k, v in order.items() if k in ("id", "customer", "item", "qty", "status", "due")}
                             for order in state["orders"]]
@@ -53,6 +54,10 @@ def filtered_state(request, member, state):
         result["customers"] = [{"id": c["id"], "name": c["name"]} for c in state["customers"]]
     if not has_permission(request, "employee.view_private"):
         result["employees"] = [{k: v for k, v in e.items() if k not in ("salary", "phone")} for e in result["employees"]]
+    if "payouts" in user["collections"] and "employees" not in user["collections"]:
+        result["employees"] = [{"id": e["id"], "name": e["name"]} for e in state["employees"]]
+    if "payouts" in user["collections"] and "payroll" not in user["collections"]:
+        result["payroll"] = [{k: v for k,v in p.items() if k in ("id","period","status")} for p in state["payroll"]]
     if not member.is_tenant_admin:
         result["audit"] = []
     return result
@@ -79,7 +84,9 @@ def invite(tenant, record, request):
             raise ValidationError("First and last names must each be at most 150 characters.")
         user = User.objects.create_user(email=f"{record['phone']}@phone.workspace.invalid", phone=phone,
                                         first_name=first, last_name=last, password=None)
-    membership = TenantMembership.objects.create(tenant=tenant, user=user, is_tenant_admin=record["role"] == "Owner")
+    if record["role"] in ("Owner", "Admin") and not request.tenant_membership.is_tenant_admin:
+        raise PermissionDenied("Only a company administrator can appoint another administrator.")
+    membership = TenantMembership.objects.create(tenant=tenant, user=user, is_tenant_admin=record["role"] in ("Owner", "Admin"))
     install_permission_catalog()
     role, _ = Role.objects.get_or_create(tenant=tenant, code="workspace-" + record["role"].lower(),
                                          defaults={"name": record["role"], "is_system": True})
@@ -164,6 +171,8 @@ class CommandsView(APIView):
             inputs = body.get("input", {})
             if not isinstance(inputs, dict):
                 raise ValidationError("Command input must be an object.")
+            if name == "approval":
+                body = {**body, "input": {**inputs, "by": request.user.get_full_name() or request.user.email}}
             # Preserve full multi-line and regulated legacy workflows instead of flattening them.
             referenced = {str(body.get("id", "")), *(str(inputs.get(k, "")) for k in ("order", "invoice"))}
             if any(r.get("read_only") and r["id"] in referenced for c in COLLECTIONS for r in prior[c]):

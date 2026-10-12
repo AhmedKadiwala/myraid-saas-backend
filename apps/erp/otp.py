@@ -89,6 +89,7 @@ class OTPVerifyResponseSerializer(OTPMessageSerializer):
 
 def user_payload(user):
     return {
+        "platform_admin": bool(user.platform_admin or user.is_superuser),
         "department": user.department,
         "name": user.get_full_name(),
         "email": user.email,

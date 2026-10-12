@@ -80,6 +80,8 @@ def resolve_tenant(request, required=True):
         return None
     if membership.tenant.status in (Tenant.Status.SUSPENDED, Tenant.Status.CANCELLED):
         raise PermissionDenied("Tenant access is suspended.")
+    if membership.tenant.status == Tenant.Status.TRIAL and membership.tenant.trial_ends_at and membership.tenant.trial_ends_at <= timezone.now():
+        raise PermissionDenied("Your free trial has ended. Contact the platform administrator about your company agreement.")
     request.tenant = membership.tenant
     request.tenant_membership = membership
     return membership.tenant

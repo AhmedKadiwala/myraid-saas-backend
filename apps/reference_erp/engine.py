@@ -13,11 +13,11 @@ from re import fullmatch
 
 COLLECTIONS = ('customers','leads','items','suppliers','quotes','orders','jobs','purchases',
                'dispatches','invoices','payments','employees','attendance','payroll',
-               'expenses','approvals','tasks','users','stockMoves')
+               'expenses','approvals','tasks','users','stockMoves','payouts')
 PREFIX = {'customers':'C','leads':'L','items':'SKU','suppliers':'V','quotes':'Q',
           'orders':'SO','jobs':'JOB','purchases':'PO','dispatches':'DC','invoices':'INV',
           'payments':'PAY','employees':'EMP','attendance':'AT','payroll':'PR',
-          'expenses':'EXP','approvals':'APR','tasks':'TK','users':'U','stockMoves':'ST'}
+          'expenses':'EXP','approvals':'APR','tasks':'TK','users':'U','stockMoves':'ST','payouts':'OUT'}
 PLANS = {'basic': {'price':2999, 'cap':10, 'modules':{'dashboard','sales','finance','reports','settings'}},
          'recommended':{'price':9999,'cap':30,'modules':{'dashboard','sales','jobs','purchase','inventory','dispatch','finance','employees','approvals','reports','settings'}},
          'full': {'price':11999,'cap':50,'modules':{'dashboard','sales','jobs','purchase','inventory','dispatch','finance','employees','approvals','reports','settings'}}}
@@ -33,13 +33,13 @@ COLLECTION_MODULE = {'customers':'sales','leads':'sales','quotes':'sales','order
                      'items':'inventory','stockMoves':'inventory','dispatches':'dispatch',
                      'invoices':'finance','payments':'finance','expenses':'finance',
                      'employees':'employees','attendance':'employees','payroll':'employees',
-                     'tasks':'approvals','approvals':'approvals','users':'settings'}
+                     'tasks':'approvals','approvals':'approvals','users':'settings','payouts':'finance'}
 FORM_MODULE = {'lead':'sales','customer':'sales','quote':'sales','order':'sales',
                'job':'jobs','job-update':'jobs','supplier':'purchase','purchase':'purchase',
                'receive':'purchase','item':'inventory','stock':'inventory','dispatch':'dispatch',
                'invoice':'finance','payment':'finance','expense':'finance',
                'employee':'employees','attendance':'employees','payroll':'employees',
-               'task':'approvals','user':'settings'}
+               'task':'approvals','approval':'approvals','user':'settings','payout':'finance'}
 ACTION_MODULE = {'quote-mark-sent':'sales','quote-convert':'sales','lead-convert':'sales',
                  'invoice-from-order':'finance','dispatch-invoice':'finance',
                  'approval-approve':'approvals','approval-reject':'approvals','task-done':'approvals',
@@ -68,7 +68,7 @@ def numeric(value, *, minimum=0, maximum=100000000, integer=True):
 def inclusive_gst(gross, rate):
     gross=money(gross,positive=True)
     rate=money(rate)
-    if rate not in {Decimal(x) for x in ('0','5','12','18','28')}: raise DomainError('Select a supported GST rate: 0, 5, 12, 18 or 28')
+    if rate < 0 or rate > 100: raise DomainError('GST rate must be between 0 and 100 percent')
     taxable=(gross/(Decimal('1')+rate/100)).quantize(Decimal('0.01'),rounding=ROUND_HALF_UP)
     return {'amount':float(gross),'gst':float(rate),'taxable':float(taxable),'gst_amount':float(gross-taxable)}
 
@@ -118,12 +118,15 @@ def balance(state,invoice):
     paid=sum((money(p['amount']) for p in state['payments'] if p['invoice']==invoice['id']),Decimal('0'))
     return money(invoice['amount'])-paid
 
-def create_invoice(state,order_id,due=''):
+def create_invoice(state,order_id,due='',gst=None,invoice_date=None):
     order=get(state,'orders',order_id)
     if any(x['order']==order_id for x in state['invoices']): raise DomainError('An invoice already exists for this order')
-    g=inclusive_gst(order['amount'],order['gst'])
+    g=inclusive_gst(order['amount'],order['gst'] if gst in (None,'') else gst)
+    item=get(state,'items',order['item'])
+    cogs=money(item.get('cost',0))*Decimal(str(order['qty']))
     inv=add(state,'invoices',{'order':order_id,'customer':order['customer'],**g,
-                              'date':today(),'due':check_date(due or today(15))})
+                              'date':check_date(invoice_date or today()),'due':check_date(due or today(15)),
+                              'cogs':float(cogs),'cost_basis':'item_cost_snapshot', 'item':item['id'],'qty':order['qty']})
     order['status']='Completed'
     return inv
 
@@ -233,7 +236,7 @@ def apply(state,command,role='Owner',plan='recommended'):
               'carrier':text(f.get('carrier'),'Carrier'), 'tracking':text(f.get('tracking'),'Tracking'),
               'status':text(f.get('status'),'Status') or 'Dispatched','date':today()})
             order['status']='Dispatched'
-        elif name=='invoice': obj=create_invoice(state,f.get('order'),f.get('due',''))
+        elif name=='invoice': obj=create_invoice(state,f.get('order'),f.get('due',''),f.get('gst'),f.get('date'))
         elif name=='payment':
             inv=get(state,'invoices',f.get('invoice'))
             amount=money(f.get('amount'),positive=True)
@@ -242,9 +245,39 @@ def apply(state,command,role='Owner',plan='recommended'):
               'date':check_date(f.get('date','')),'mode':text(f.get('mode'),'Payment mode',True),
               'ref':text(f.get('ref'),'Reference',False,100) or '—'})
         elif name=='expense':
+            tax=inclusive_gst(f.get('amount'),f.get('gst',0))
             obj=add(state,'expenses',{'name':text(f.get('name'),'Expense',True),
-              'category':text(f.get('category'),'Category',True), 'amount':float(money(f.get('amount'),positive=True)),
+              'category':text(f.get('category'),'Category',True), **tax,
+              'gst_creditable':str(f.get('gst_creditable',False)).lower() in ('true','on','1'),
+              'payment_status':text(f.get('payment_status','Paid'),'Payment status') or 'Paid',
+              'mode':text(f.get('mode','Bank transfer'),'Payment mode') or 'Bank transfer',
               'date':check_date(f.get('date','')),'recurring':text(f.get('recurring'),'Recurring')})
+            if obj['payment_status'] not in ('Paid','Unpaid'):raise DomainError('Choose Paid or Unpaid')
+        elif name=='payout':
+            amount=money(f.get('amount'),positive=True)
+            category=text(f.get('kind'),'Payout type',True)
+            if category not in ('salary','other_expense','expense','supplier','asset_purchase','loan_repayment','transfer','tax','salary_advance'):
+                raise DomainError('Choose a valid payout type')
+            linked_expense=text(f.get('expense',''),'Expense ID')
+            linked_payroll=text(f.get('payroll',''),'Payroll ID')
+            employee=text(f.get('employee',''),'Employee ID')
+            if employee:get(state,'employees',employee)
+            if category in ('salary','salary_advance') and not employee:raise DomainError('Select an employee for a salary payment or advance')
+            if linked_expense:
+                exp=get(state,'expenses',linked_expense)
+                paid=money(exp['amount']) if exp.get('payment_status','Paid')=='Paid' else sum((money(p['amount']) for p in state['payouts'] if p.get('expense')==linked_expense),Decimal('0'))
+                if amount>money(exp['amount'])-paid:raise DomainError('Payment exceeds expense outstanding')
+                if category!='expense':raise DomainError('Linked expenses use the expense payment type')
+            if category=='expense' and not linked_expense:raise DomainError('Select the expense being paid')
+            if linked_payroll:
+                pay=get(state,'payroll',linked_payroll)
+                if pay['status']!='Finalized' or category!='salary':raise DomainError('Select a finalized payroll run for salary settlement')
+                settled=sum((money(p['amount']) for p in state['payouts'] if p.get('payroll')==linked_payroll),Decimal('0'))
+                if amount>money(pay['amount'])-settled:raise DomainError('Payment exceeds payroll outstanding')
+            obj=add(state,'payouts',{'kind':category,'payee':text(f.get('payee'),'Payee',True),
+                'employee':employee,'expense':linked_expense,'payroll':linked_payroll,'amount':float(amount),
+                'date':check_date(f.get('date','')),'mode':text(f.get('mode'),'Payment mode',True),
+                'ref':text(f.get('ref'),'Reference'),'note':text(f.get('note'),'Note')})
         elif name=='employee':
             obj=add(state,'employees',{'name':text(f.get('name'),'Employee',True),
               'department':text(f.get('department'),'Department',True),'role':text(f.get('role'),'Role'),
@@ -264,7 +297,12 @@ def apply(state,command,role='Owner',plan='recommended'):
             period=date.fromisoformat(year_month+'-01').strftime('%b %Y')
             if any(p['period']==period for p in state['payroll']): raise DomainError('Payroll run for this period exists')
             salary=sum(money(e.get('salary',0)) for e in state['employees'] if e['status']=='Active')
-            obj=add(state,'payroll',{'period':period,'amount':float(salary),'status':'Draft'})
+            obj=add(state,'payroll',{'period':period,'month':year_month,'amount':float(salary),'status':'Draft'})
+        elif name=='approval':
+            if money(f.get('amount',0))<0:raise DomainError('Proposed amount cannot be negative')
+            obj=add(state,'approvals',{'title':text(f.get('title'),'Approval request',True),
+              'type':text(f.get('type'),'Request type',True,30),'amount':float(money(f.get('amount',0))),
+              'by':text(f.get('by'),'Requested by'),'date':today(),'status':'Pending'})
         elif name=='task':
             obj=add(state,'tasks',{'title':text(f.get('title'),'Task',True),
               'owner':text(f.get('owner'),'Owner'),'due':check_date(f.get('due','')),'status':'Pending'})
@@ -306,6 +344,7 @@ def apply(state,command,role='Owner',plan='recommended'):
             obj=get(state,'payroll',code)
             if obj['status']!='Draft':raise DomainError('Only draft payroll can be finalized')
             obj['status']='Finalized'
+            obj['date']=today()
         elif name=='user-toggle':
             obj=get(state,'users',code)
             if obj['role']=='Owner' and obj['status']=='Active':raise DomainError('Owner cannot be deactivated')

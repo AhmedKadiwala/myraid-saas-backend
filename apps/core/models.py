@@ -115,6 +115,9 @@ class Tenant(TimeStampedModel):
     )
     razorpay_customer_id = models.CharField(max_length=100, blank=True)
     trial_ends_at = models.DateTimeField(null=True, blank=True)
+    complimentary_access = models.BooleanField(default=False)
+    billing_start_date = models.DateField(null=True, blank=True)
+    payment_due_day = models.PositiveSmallIntegerField(default=7, validators=[MinValueValidator(1)])
     agreed_monthly_price = models.DecimalField(
         "Agreed monthly price (INR)", max_digits=12, decimal_places=2,
         null=True, blank=True, validators=[MinValueValidator(0)],

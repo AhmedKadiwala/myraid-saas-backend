@@ -88,14 +88,13 @@ protection.
 ## Negotiated monthly pricing and free trials
 
 New company workspaces receive exactly seven days of free access, with trial
-entitlements expiring at the same time. Onboarding validates chosen modules but
+entitlements expiring at the same time. All available modules are enabled automatically; onboarding
 returns a negotiated quote with no fixed monthly price.
 
 `Tenant.agreed_monthly_price` stores each company's privately agreed INR monthly
 rate. The platform administrator can set it under Tenants in Django admin. It is
 independent of shared subscription-plan pricing, so two companies with the same
-capabilities can have different agreements. The workspace API returns only the
-active tenant's agreed amount, or null while pricing is under discussion.
+capabilities can have different agreements. The workspace API returns the agreed amount only to company and platform admins.
 
 This records the agreement; it does not automatically infer willingness to pay,
 change an existing payment-provider subscription, or collect a payment. Payment
@@ -103,3 +102,50 @@ collection can be connected to the agreed price when the billing module is built
 
 91 tests passed, including exact seven-day onboarding and independent agreed
 prices for customers on the same plan.
+
+## Admin workflows and financial statements
+
+`/api/v1/workspace-ui/platform/` and `/platform/tenants/` are restricted to the
+actual platform-owner flag. Owners can add tenant administrators, replace the
+primary administrator, extend free access, grant complimentary access, set each
+company's negotiated rate and record received payments. New paid agreements still
+start with at least seven free days. No charge is generated during the trial.
+Monthly charges retain their original rate, and partial payments show overdue
+balances. UUID and payment-reference checks prevent duplicate manual receipts.
+UPI linking and automated payment verification are explicitly planned only.
+
+Company admins read their own rate and history via `/billing/`, including after
+operational access expires. Staff cannot read subscription amounts through the
+workspace, plan/tenant serializers, subscription invoices or legacy bootstrap.
+Company names are editable only by real company admins; role names do not confer
+admin status. Creating an Admin invitation requires an existing company admin.
+
+Activate MSG91 in production before running `python manage.py
+bootstrap_platform_owner --phone <designated-number>`. The production command and
+owner APIs reject mock OTP mode. The designated number is not hardcoded in source.
+Gateway setup and owner activation are deferred at the user's request.
+
+`/statement/` supports day, week, month, calendar year, April–March financial year
+and custom date ranges. Dynamic GST is included in the final invoice amount.
+Cash settlement does not rewrite the invoice's GST rate. The zero-GST option
+filters invoice/receipt register rows while complete statement totals retain all
+transactions. CSV export uses `export=csv` and protects spreadsheet formulas.
+
+The operating statement uses accrual revenue, stored item-cost snapshots, expenses
+and finalized payroll; receipts and linked expense/payroll payouts settle balances
+without counting income or expense again. Direct salary/business expense payouts
+reduce profit. Asset, loan, tax, transfer and advance payments are separate cash
+outflows. Enter all outgoing business payments in Expenses or Payouts, including
+subscription costs where applicable. Historical invoices without stored costs show
+estimated profit and warnings. Opening balances, depreciation and journal entries
+are still required for a complete statutory balance sheet; this is not one.
+
+Approval requests can now be created and approved/rejected in the connected
+workspace. Record any resulting financial transaction in its own module.
+
+Verification includes a fresh all-module trial through customer/item/supplier,
+purchase receipt, quotation/order, job, dispatch, inclusive invoice, cash receipt,
+employee/attendance/payroll, salary/expense settlement, task, approval and staff
+invitation. Platform payment, privilege, privacy, FY and zero-GST cases are covered.
+
+Final verification: 105 backend tests passed; no missing migrations were detected.

@@ -8,6 +8,7 @@ from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 
 from .api import APIView
+from .admin_access import require_company_admin
 from .billing import process_razorpay_event, verify_razorpay_webhook
 from .models import (
     Branch,
@@ -36,7 +37,7 @@ from .services import (
 class CurrentTenantView(APIView):
     def get(self, request):
         tenant = resolve_tenant(request)
-        return Response({"tenant": TenantSerializer(tenant).data})
+        return Response({"tenant": TenantSerializer(tenant, context={"request": request}).data})
 
 
 class TenantSettingsView(APIView):
@@ -86,12 +87,13 @@ class PlanListView(APIView):
 
     def get(self, request):
         plans = SubscriptionPlan.objects.filter(is_active=True)
-        return Response({"plans": SubscriptionPlanSerializer(plans, many=True).data})
+        return Response({"plans": SubscriptionPlanSerializer(plans, many=True, context={"request": request}).data})
 
 
 class SubscriptionView(APIView):
     def get(self, request):
         tenant = resolve_tenant(request)
+        require_company_admin(request, tenant)
         subscription = TenantSubscription.objects.filter(tenant=tenant).first()
         return Response({
             "subscription": (
@@ -145,6 +147,7 @@ class SubscriptionView(APIView):
 class InvoiceListView(APIView):
     def get(self, request):
         tenant = resolve_tenant(request)
+        require_company_admin(request, tenant)
         invoices = Invoice.objects.filter(tenant=tenant).order_by("-created_at")
         return Response({"invoices": InvoiceSerializer(invoices, many=True).data})
 
