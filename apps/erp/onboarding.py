@@ -36,9 +36,10 @@ def owner_role(tenant,user):
 
 
 def create_company_workspace(user,company_name,selected):
-    quote=price_quote(selected)
+    price_quote(selected)  # Validate feature names/dependencies; public pricing is negotiated.
+    quote={"pricing_mode":"negotiated","monthly":None,"currency":"INR","trial_days":settings.ERP_TRIAL_DAYS,"features":sorted(set(selected))}
     plan,_=SubscriptionPlan.objects.get_or_create(code="erp-basic",defaults={"name":"ERP Basic","price_monthly":2999,"user_limit":5,"branch_limit":1,"storage_limit_mb":1024})
-    slug=f"{slugify(company_name)[:45] or 'company'}-{uuid.uuid4().hex[:8]}";expiry=timezone.now()+timedelta(days=getattr(settings,"ERP_TRIAL_DAYS",14))
+    slug=f"{slugify(company_name)[:45] or 'company'}-{uuid.uuid4().hex[:8]}";expiry=timezone.now()+timedelta(days=settings.ERP_TRIAL_DAYS)
     tenant=Tenant.objects.create(name=company_name,slug=slug,status="trial",plan=plan,trial_ends_at=expiry)
     branch=Branch.objects.create(tenant=tenant,name="Main branch",code="main")
     TenantMembership.objects.create(tenant=tenant,user=user,is_tenant_admin=True,default_branch=branch)
@@ -65,7 +66,7 @@ class OnboardView(APIView):
         user=User.objects.create_user(email=f"{digits}.{uuid.uuid4().hex[:8]}@phone.myraid.invalid",phone=data["phone"],password=None,first_name=first,last_name=last,department="admin")
         user.set_unusable_password();user.save(update_fields=["password"])
         _,expiry,_=create_company_workspace(user,data["company_name"],data["features"])
-        return Response({"message":"Workspace created. Verify the phone number with OTP to sign in.","phone":user.phone_e164,"trial_ends_at":expiry},status=201)
+        return Response({"message":"Your one-week free trial is ready. Verify your mobile number with OTP to sign in.","phone":user.phone_e164,"trial_ends_at":expiry,"trial_days":settings.ERP_TRIAL_DAYS,"pricing_mode":"negotiated"},status=201)
 
 
 class AddCompanyView(APIView):

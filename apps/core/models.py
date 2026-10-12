@@ -1,6 +1,7 @@
 from django.contrib.auth.base_user import BaseUserManager
 from django.contrib.auth.models import AbstractUser
 from django.core.exceptions import ValidationError
+from django.core.validators import MinValueValidator
 from django.db import models
 from django.db.models import Q
 from django.utils import timezone
@@ -114,6 +115,17 @@ class Tenant(TimeStampedModel):
     )
     razorpay_customer_id = models.CharField(max_length=100, blank=True)
     trial_ends_at = models.DateTimeField(null=True, blank=True)
+    agreed_monthly_price = models.DecimalField(
+        "Agreed monthly price (INR)", max_digits=12, decimal_places=2,
+        null=True, blank=True, validators=[MinValueValidator(0)],
+        help_text="Company-specific monthly price agreed with the customer. Leave blank until a quote is accepted.",
+    )
+
+    class Meta:
+        constraints = [models.CheckConstraint(
+            condition=Q(agreed_monthly_price__isnull=True) | Q(agreed_monthly_price__gte=0),
+            name="tenant_agreed_price_nonnegative",
+        )]
 
 
 class TenantSettings(models.Model):

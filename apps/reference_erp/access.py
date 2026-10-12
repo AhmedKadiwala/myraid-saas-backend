@@ -111,7 +111,9 @@ def public_user(request, membership):
         "phone": membership.user.phone, "role": role, "company": tenant.name,
         "tenant": tenant.slug, "tenant_id": tenant.pk, "plan": plan,
         "cap": tenant.plan.user_limit if tenant.plan_id else PLANS[plan]["cap"],
-        "price": float(tenant.plan.price_monthly) if tenant.plan_id else PLANS[plan]["price"],
+        "price": float(tenant.agreed_monthly_price) if tenant.agreed_monthly_price is not None else None,
+        "pricing_mode": "negotiated", "status": tenant.status,
+        "trial_ends_at": tenant.trial_ends_at.isoformat() if tenant.trial_ends_at else None,
         "modules": sorted(modules), "collections": collections,
         "can_profitability": "profitability" in features(tenant) and has_permission(request, "profitability.view") and has_permission(request, "stock.view_cost"),
         "memberships": list(TenantMembership.objects.filter(user=request.user, is_active=True)

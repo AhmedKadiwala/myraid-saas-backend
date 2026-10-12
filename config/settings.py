@@ -425,6 +425,8 @@ ERP_DEV_FIXED_OTP = (
 #
 # No phone numbers or OTP values are hardcoded. Mock mode works for any
 # active user present in the database.
+ERP_TRIAL_DAYS = 7
+
 ERP_OTP_MODE = os.getenv(
     "ERP_OTP_MODE",
     "mock",

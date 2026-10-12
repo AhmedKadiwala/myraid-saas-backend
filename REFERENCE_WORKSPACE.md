@@ -84,3 +84,22 @@ Public OTP endpoints ignore stale bearer/cookie/tenant state.
 The full suite now passes 88 tests, including expired-token status, stale tenant
 profile lookup, public OTP verification with stale headers and anonymous endpoint
 protection.
+
+## Negotiated monthly pricing and free trials
+
+New company workspaces receive exactly seven days of free access, with trial
+entitlements expiring at the same time. Onboarding validates chosen modules but
+returns a negotiated quote with no fixed monthly price.
+
+`Tenant.agreed_monthly_price` stores each company's privately agreed INR monthly
+rate. The platform administrator can set it under Tenants in Django admin. It is
+independent of shared subscription-plan pricing, so two companies with the same
+capabilities can have different agreements. The workspace API returns only the
+active tenant's agreed amount, or null while pricing is under discussion.
+
+This records the agreement; it does not automatically infer willingness to pay,
+change an existing payment-provider subscription, or collect a payment. Payment
+collection can be connected to the agreed price when the billing module is built.
+
+91 tests passed, including exact seven-day onboarding and independent agreed
+prices for customers on the same plan.
