@@ -71,3 +71,16 @@ python manage.py makemigrations --check --dry-run --settings=config.test_setting
 JWT authentication, invitations, role/feature denial, quote-to-invoice/payment,
 stock receipt idempotency, imported-stock preservation, user limits and prevention
 of invitation privilege escalation.
+
+## Authentication failures
+
+The first DRF authenticator now supplies an authentication challenge. Invalid or
+expired JWTs therefore return 401 rather than being converted to 403. Actual
+membership, role and feature denials remain 403. The authenticated user-profile
+endpoint is independent of tenant selection and returns the user's active company
+memberships, so an old tenant ID cannot prevent reading the user's own profile.
+Public OTP endpoints ignore stale bearer/cookie/tenant state.
+
+The full suite now passes 88 tests, including expired-token status, stale tenant
+profile lookup, public OTP verification with stale headers and anonymous endpoint
+protection.

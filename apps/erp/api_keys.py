@@ -16,6 +16,11 @@ def valid_webhook_url(url):
     return url
 
 class ERPApiKeyAuthentication(BaseAuthentication):
+    def authenticate_header(self, request):
+        # DRF uses the first authenticator's challenge even when a later JWT
+        # authenticator rejects a token. Missing this converted token errors to 403.
+        return "ERP-API-Key" if request.headers.get("X-ERP-API-Key") else "Bearer"
+
     def authenticate(self,request):
         raw=request.headers.get("X-ERP-API-Key","")
         if not raw:return None

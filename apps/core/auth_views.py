@@ -2,7 +2,7 @@ from django.contrib.auth import authenticate
 from django.conf import settings
 from django.middleware.csrf import get_token
 from rest_framework import status
-from rest_framework.permissions import AllowAny
+from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework_simplejwt.tokens import RefreshToken
 
@@ -140,12 +140,12 @@ class SignupView(APIView):
 
 
 class UserInfoView(APIView):
+    permission_classes = [IsAuthenticated]
+
     def get(self, request):
-        tenant = resolve_tenant(request, required=False)
         detail = UserSerializer(request.user).data
-        if tenant:
-            detail["tenant_id"] = tenant.pk
-            detail["tenant_name"] = tenant.name
+        detail["memberships"] = list(TenantMembership.objects.filter(user=request.user, is_active=True)
+                                     .values("tenant_id", "tenant__name", "is_tenant_admin"))
         return Response({"message": "User detail fetched successfully", "detail": detail})
 
 

@@ -104,7 +104,7 @@ class WorkspaceAPITests(TestCase):
         self.assertEqual(self.command("reset", kind="action").status_code, 403)
         self.assertEqual(self.command("set-plan", {"plan": "full"}, kind="action").status_code, 403)
         self.api.credentials()
-        self.assertEqual(self.api.get("/api/v1/workspace-ui/workspace/").status_code, 403)
+        self.assertEqual(self.api.get("/api/v1/workspace-ui/workspace/").status_code, 401)
 
     def test_new_tenant_copies_current_records_once_without_sample_data(self):
         customer = Company.objects.create(tenant=self.other, name="Existing Customer", address="Pune")
