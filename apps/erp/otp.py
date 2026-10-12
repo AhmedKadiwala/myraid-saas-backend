@@ -258,12 +258,10 @@ class RequestOTPView(APIView):
         if not user:
             return Response(
                 {
-                    "message": "No active user exists with this phone number.",
-                    "user_exists": False,
-                    "otp_created": False,
-                    "otp_token": None,
+                    "message": "If this mobile is active, a code has been sent.",
+                    "otp_token": secrets.token_urlsafe(32),
                 },
-                status=404,
+                status=200,
             )
 
         recent_otp = LoginOTP.objects.filter(
@@ -374,9 +372,7 @@ class RequestOTPView(APIView):
 
         response_payload = {
             "message": (
-                "Mock OTP created successfully."
-                if delivery_mode == "mock"
-                else "A sign-in code has been sent."
+                "If this mobile is active, a code has been sent."
             ),
             "user_exists": True,
             "otp_created": True,

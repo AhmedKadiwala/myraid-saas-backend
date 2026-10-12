@@ -73,6 +73,7 @@ INSTALLED_APPS = [
 
     "apps.core",
     "apps.erp",
+    "apps.reference_erp",
 ]
 
 
