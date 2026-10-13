@@ -389,13 +389,21 @@ class PhoneOTPTestCase(TestCase):
         one=api.get("/api/v1/erp/bootstrap/",HTTP_X_TENANT_ID=str(self.tenant.id),HTTP_X_BRANCH_ID=str(self.branch1.id));self.assertEqual(one.status_code,200,one.data);self.assertIn("item.view",one.data["permissions"]);self.assertNotIn("payment.record",one.data["permissions"])
         two=api.get("/api/v1/erp/bootstrap/",HTTP_X_TENANT_ID=str(other.id),HTTP_X_BRANCH_ID=str(other_branch.id));self.assertEqual(two.status_code,200,two.data);self.assertIn("payment.record",two.data["permissions"]);self.assertNotIn("item.view",two.data["permissions"])
 
-    def test_authenticated_phone_identity_can_add_and_switch_company(self):
+    def test_only_super_admin_can_add_company_to_existing_phone_identity(self):
         api=APIClient();api.force_authenticate(self.user)
-        created=api.post("/api/v1/erp/companies/",{"company_name":"Third Company","features":[]},format="json",HTTP_X_TENANT_ID=str(self.tenant.id))
+        payload={"company_name":"Third Company","phone":self.user.phone,"features":[]}
+        denied=api.post("/api/v1/erp/companies/",payload,format="json")
+        self.assertEqual(denied.status_code,403,denied.data)
+        self.assertFalse(Tenant.objects.filter(name="Third Company").exists())
+        admin=User.objects.create_user(email="superadmin@phone.test",phone="9876501199",platform_admin=True)
+        api.force_authenticate(admin)
+        created=api.post("/api/v1/erp/companies/",payload,format="json")
         self.assertEqual(created.status_code,201,created.data)
         third=Tenant.objects.get(pk=created.data["tenant_id"])
         self.assertEqual(TenantMembership.objects.filter(user=self.user,is_active=True).count(),2)
         self.assertEqual(UserRole.objects.filter(tenant=third,user=self.user,is_active=True).count(),1)
+        self.assertFalse(TenantMembership.objects.filter(tenant=third,user=admin).exists())
+        api.force_authenticate(self.user)
         switched=api.get("/api/v1/erp/bootstrap/",HTTP_X_TENANT_ID=str(third.id))
         self.assertEqual(switched.status_code,200,switched.data)
         self.assertEqual(switched.data["tenant"]["name"],"Third Company")

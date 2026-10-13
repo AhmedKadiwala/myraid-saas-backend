@@ -47,3 +47,25 @@ class LoginBoundaryTests(TestCase):
     def test_anonymous_bootstrap_and_permissions_stay_protected(self):
         for route in ("/api/v1/erp/bootstrap/", "/api/v1/auth/user-info"):
             self.assertEqual(self.api.get(route).status_code, 401)
+
+    def test_session_renews_after_thirty_days_and_rotated_tokens_are_revoked(self):
+        refresh = RefreshToken.for_user(self.user)
+        refresh.set_exp(from_time=timezone.now()-timedelta(days=30), lifetime=timedelta(days=31))
+        renewed = self.api.post("/api/v1/auth/refresh", {"refresh":str(refresh)}, format="json")
+        self.assertEqual(renewed.status_code, 200, renewed.data)
+        new_refresh = RefreshToken(renewed.data["refresh"])
+        self.assertGreaterEqual(new_refresh["exp"]-new_refresh["iat"], 31*86400)
+        self.assertGreaterEqual(int(renewed.cookies["refresh_token"]["max-age"]), 31*86400-2)
+        reused = self.api.post("/api/v1/auth/refresh", {"refresh":str(refresh)}, format="json")
+        self.assertEqual(reused.status_code, 401)
+        logged_out = self.api.post("/api/v1/auth/logout", {"refresh":str(new_refresh)}, format="json")
+        self.assertEqual(logged_out.status_code, 200)
+        self.assertEqual(self.api.post("/api/v1/auth/refresh", {"refresh":str(new_refresh)}, format="json").status_code, 401)
+
+    def test_expired_or_disabled_sessions_cannot_renew(self):
+        refresh = RefreshToken.for_user(self.user)
+        refresh.set_exp(from_time=timezone.now()-timedelta(days=32), lifetime=timedelta(days=31))
+        self.assertEqual(self.api.post("/api/v1/auth/refresh", {"refresh":str(refresh)}, format="json").status_code, 401)
+        refresh = RefreshToken.for_user(self.user)
+        self.user.is_active=False; self.user.save(update_fields=["is_active"])
+        self.assertEqual(self.api.post("/api/v1/auth/refresh", {"refresh":str(refresh)}, format="json").status_code, 401)

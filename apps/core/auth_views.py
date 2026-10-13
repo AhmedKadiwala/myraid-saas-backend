@@ -1,6 +1,7 @@
 from django.contrib.auth import authenticate
 from django.conf import settings
 from django.middleware.csrf import get_token
+from django.utils import timezone
 from rest_framework import status
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
@@ -16,11 +17,13 @@ from .services import enforce_tenant_admin, ensure_plan_limit, resolve_tenant
 def set_auth_cookies(response, refresh):
     response.set_cookie(
         "access_token", str(refresh.access_token), httponly=True,
-        secure=not settings.DEBUG, samesite="Lax", max_age=15 * 60,
+        secure=not settings.DEBUG, samesite="Lax",
+        max_age=int(settings.SIMPLE_JWT["ACCESS_TOKEN_LIFETIME"].total_seconds()),
     )
     response.set_cookie(
         "refresh_token", str(refresh), httponly=True,
-        secure=not settings.DEBUG, samesite="Lax", max_age=7 * 24 * 60 * 60,
+        secure=not settings.DEBUG, samesite="Lax",
+        max_age=max(0, int(refresh["exp"] - timezone.now().timestamp())),
     )
 
 

@@ -11,6 +11,9 @@ from rest_framework import serializers
 from rest_framework.response import Response
 from apps.core.models import User,Tenant,TenantMembership,TenantSettings,SubscriptionPlan,Branch,Role,RolePermission,UserRole,BusinessPermission
 from apps.core.management.commands.bootstrap_saas import PERMISSIONS as SALES_PERMISSIONS
+from apps.core.admin_access import is_platform_owner
+from django.db.models import Q
+from rest_framework.exceptions import PermissionDenied
 from .catalog import FEATURES,PERMISSIONS,price_quote
 from .models import ErpSettings,Entitlement
 from .otp import normalize_phone
@@ -53,7 +56,7 @@ class OnboardInput(serializers.Serializer):
     company_name=serializers.CharField(max_length=200);name=serializers.CharField(max_length=150);phone=serializers.CharField(max_length=16);features=serializers.ListField(child=serializers.CharField(),default=list)
     def validate(self,data):
         phone=normalize_phone(data["phone"]);digits=phone[-10:]
-        if User.objects.filter(phone_e164=phone).exists() or User.objects.filter(phone=digits).exists():raise serializers.ValidationError("This phone number already has a Myraid identity. Sign in with OTP and choose Add company.")
+        if User.objects.filter(phone_e164=phone).exists() or User.objects.filter(phone=digits).exists():raise serializers.ValidationError("This phone number already has a Myraid identity. Sign in with OTP. Contact the super admin to add another company to your account.")
         data["phone"]=phone;price_quote(data["features"]);return data
 
 
@@ -74,7 +77,12 @@ class AddCompanyView(APIView):
     permission_classes=[IsAuthenticated]
     @transaction.atomic
     def post(self,request):
+        if not is_platform_owner(request.user):
+            raise PermissionDenied("Only the super admin can add companies to an owner account.")
+        phone=normalize_phone(request.data.get("phone"))
+        user=User.objects.filter(Q(phone_e164=phone)|Q(phone=phone[-10:]),is_active=True).first()
+        if not user:raise serializers.ValidationError({"phone":"Choose an existing active owner phone number."})
         name=str(request.data.get("company_name","")).strip();selected=request.data.get("features",[])
-        if not name:raise serializers.ValidationError({"company_name":"Company name is required."})
-        tenant,expiry,quote=create_company_workspace(request.user,name,selected)
+        if not name or len(name)>200:raise serializers.ValidationError({"company_name":"Enter a company name of up to 200 characters."})
+        tenant,expiry,quote=create_company_workspace(user,name,selected)
         return Response({"message":"Company workspace created.","tenant_id":tenant.pk,"tenant_name":tenant.name,"trial_ends_at":expiry,"subscription_quote":quote},status=201)

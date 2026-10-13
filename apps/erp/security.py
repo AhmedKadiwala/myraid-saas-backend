@@ -30,6 +30,9 @@ def context(request):
 
 def features(tenant):
     now = timezone.now()
+    if tenant.status == "trial" and tenant.trial_ends_at and now < tenant.trial_ends_at:
+        from .catalog import FEATURES
+        return (set(FEATURES) - {"gst_integrations"}) | {"basic"}
     return set(Entitlement.objects.filter(tenant=tenant, enabled=True, effective_at__lte=now).filter(Q(expires_at__isnull=True) | Q(expires_at__gt=now)).values_list("feature", flat=True)) | {"basic"}
 
 
