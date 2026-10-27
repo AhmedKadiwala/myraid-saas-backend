@@ -2,7 +2,7 @@ from django.core.cache import cache
 from django.db.models.signals import post_delete, post_save
 from django.dispatch import receiver
 
-from .models import BusinessPermission, Role, RolePermission, UserRole
+from .models import BusinessPermission, Role, RolePermission, UserRole, TenantMembership
 
 
 def clear_rbac_cache():
@@ -12,6 +12,7 @@ def clear_rbac_cache():
 
 
 @receiver([post_save, post_delete], sender=UserRole)
+@receiver([post_save, post_delete], sender=TenantMembership)
 @receiver([post_save, post_delete], sender=RolePermission)
 @receiver([post_save, post_delete], sender=Role)
 @receiver([post_save, post_delete], sender=BusinessPermission)

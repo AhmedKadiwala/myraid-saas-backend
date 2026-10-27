@@ -11,6 +11,8 @@ urlpatterns = [
     path("auth/user-info", auth_views.UserInfoView.as_view()),
     path("auth/edit-user/<int:user_id>", auth_views.EditUserView.as_view()),
     path("auth/change-password", auth_views.ChangePasswordView.as_view()),
+    path("auth/password-reset/request", auth_views.RequestPasswordResetView.as_view()),
+    path("auth/password-reset/confirm", auth_views.ConfirmPasswordResetView.as_view()),
     path("auth/reset-password/<int:user_id>", auth_views.ResetPasswordView.as_view()),
 
     # Tenant SaaS surface

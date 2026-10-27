@@ -2,6 +2,10 @@ from django.contrib.auth import authenticate
 from django.conf import settings
 from django.middleware.csrf import get_token
 from django.utils import timezone
+from django.contrib.auth.tokens import default_token_generator
+from django.core.mail import send_mail
+from django.utils.encoding import force_bytes
+from django.utils.http import urlsafe_base64_encode, urlsafe_base64_decode
 from rest_framework import status
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
@@ -32,25 +36,19 @@ class LoginView(APIView):
     authentication_classes = []
 
     def post(self, request):
-        if not settings.ERP_ALLOW_PASSWORD_LOGIN:
-            return Response({"message":"Sign in with phone number and OTP."},status=status.HTTP_410_GONE)
-        email = request.data.get("email")
+        identifier = str(request.data.get("username") or request.data.get("email") or "").strip()
         password = request.data.get("password")
-        if not email or not password or len(password) < 6:
+        if not identifier or not password or len(password) < 8:
             return Response(
-                {"message": "Input validation error", "error": [
-                    {"path": ["password"], "message": "Password should be atleast 6 characters long"}
-                ]},
+                {"message": "Enter your username or email and a password of at least 8 characters."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
-        user = authenticate(request, email=email, password=password)
+        user_record = User.objects.filter(username__iexact=identifier).first()
+        if user_record is None:
+            user_record = User.objects.filter(email__iexact=identifier).first()
+        user = authenticate(request, email=user_record.email, password=password) if user_record else None
         if user is None:
-            message = (
-                "Email not found. Enter correct email"
-                if not User.objects.filter(email__iexact=email).exists()
-                else "Incorrect password"
-            )
-            return Response({"message": message}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({"message": "Username/email or password is incorrect."}, status=status.HTTP_400_BAD_REQUEST)
         refresh = RefreshToken.for_user(user)
         memberships = list(
             TenantMembership.objects.filter(user=user, is_active=True)
@@ -64,7 +62,8 @@ class LoginView(APIView):
                 "platform_admin": bool(user.platform_admin or user.is_superuser),
                 "department": user.department,
                 "name": user.get_full_name(),
-                "email": user.email,
+                "email": user.email if not user.email.endswith(".myraid.invalid") else "",
+                "username": user.username,
                 "code": user.quotation_code,
                 "id": user.id,
                 "memberships": memberships,
@@ -156,6 +155,8 @@ class UserInfoView(APIView):
 class EditUserView(APIView):
     def post(self, request, user_id):
         tenant = enforce_tenant_admin(request)
+        if tenant.owner_id == user_id and request.user.pk != user_id:
+            return Response({"message": "The company owner's identity is protected."}, status=403)
         if not TenantMembership.objects.filter(tenant=tenant, user_id=user_id).exists():
             return Response({"message": "User not found"}, status=404)
         user = User.objects.get(pk=user_id)
@@ -167,11 +168,10 @@ class EditUserView(APIView):
 
 class ChangePasswordView(APIView):
     def post(self, request):
-        return Response({"message":"Myraid uses phone OTP. Password login is disabled."},status=410)
         old_password = request.data.get("old_password", "")
         new_password = request.data.get("new_password", "")
-        if len(new_password) < 6:
-            return Response({"message": "Input validation error"}, status=400)
+        if len(new_password) < 8:
+            return Response({"message": "Use at least 8 characters for your new password."}, status=400)
         if not request.user.check_password(old_password):
             return Response(
                 {"message": "Incorrect password. Enter correct password"}, status=400
@@ -181,15 +181,58 @@ class ChangePasswordView(APIView):
         return Response({"message": "Password changed successfully"})
 
 
+class RequestPasswordResetView(APIView):
+    permission_classes = [AllowAny]
+    authentication_classes = []
+
+    def post(self, request):
+        email = str(request.data.get("email", "")).strip()
+        user = User.objects.filter(email__iexact=email, is_active=True).exclude(email__endswith=".myraid.invalid").first()
+        if user:
+            origin = getattr(settings, "ERP_PUBLIC_APP_URL", "http://localhost:5173").rstrip("/")
+            link = f"{origin}/?reset={urlsafe_base64_encode(force_bytes(user.pk))}&token={default_token_generator.make_token(user)}"
+            send_mail(
+                "Reset your Myraid password",
+                f"Use this link to choose a new password: {link}\nIf you did not request this, ignore this message.",
+                settings.DEFAULT_FROM_EMAIL,
+                [user.email],
+                fail_silently=True,
+            )
+        return Response({"message": "If that email is registered, a password reset link has been sent."})
+
+
+class ConfirmPasswordResetView(APIView):
+    permission_classes = [AllowAny]
+    authentication_classes = []
+
+    def post(self, request):
+        try:
+            user_id = urlsafe_base64_decode(str(request.data.get("uid", ""))).decode()
+            user = User.objects.get(pk=user_id, is_active=True)
+        except Exception:
+            user = None
+        password = str(request.data.get("password", ""))
+        token = str(request.data.get("token", ""))
+        if not user or not default_token_generator.check_token(user, token):
+            return Response({"message": "This password reset link is invalid or expired."}, status=400)
+        if len(password) < 8:
+            return Response({"message": "Use at least 8 characters for your new password."}, status=400)
+        user.set_password(password)
+        user.save(update_fields=["password"])
+        return Response({"message": "Password updated. Sign in with your new password."})
+
+
 class ResetPasswordView(APIView):
     def post(self, request, user_id):
-        return Response({"message":"Myraid uses phone OTP. There is no password to reset."},status=410)
         tenant = enforce_tenant_admin(request)
         membership = TenantMembership.objects.filter(
             tenant=tenant, user_id=user_id, is_active=True
         ).select_related("user").first()
         if not membership:
             return Response({"message": "User not found"}, status=404)
-        membership.user.set_password("123456")
-        membership.user.save(update_fields=["password"])
-        return Response({"message": "Password reset successfully"})
+        user = membership.user
+        if user.email.endswith(".myraid.invalid"):
+            return Response({"message": "This account has no recovery email. Ask the user to change their password after signing in."}, status=400)
+        link = f"{getattr(settings, 'ERP_PUBLIC_APP_URL', 'http://localhost:5173').rstrip('/')}/?reset={urlsafe_base64_encode(force_bytes(user.pk))}&token={default_token_generator.make_token(user)}"
+        send_mail("Reset your Myraid password", f"Use this link to choose a new password: {link}", settings.DEFAULT_FROM_EMAIL, [user.email], fail_silently=True)
+        return Response({"message": "Password reset link sent to the user's email."})

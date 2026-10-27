@@ -1,6 +1,7 @@
 import json
 from pathlib import Path
 from uuid import uuid4
+from django.utils import timezone
 from django.test import TestCase
 from rest_framework.test import APIClient
 from rest_framework_simplejwt.tokens import RefreshToken
@@ -8,7 +9,7 @@ from apps.core.models import Tenant, User, TenantMembership, SubscriptionPlan, C
 from apps.erp.models import Item, StockBalance, Warehouse, ErpSettings, Entitlement
 from apps.erp.catalog import FEATURES
 from .test_engine import FIXTURE
-from ..models import ERPRecord, WorkspaceSettings, AuditEvent
+from ..models import ERPRecord, WorkspaceSettings, AuditEvent, CompanyInvitation
 from ..engine import COLLECTIONS
 
 
@@ -28,7 +29,7 @@ class WorkspaceAPITests(TestCase):
         WorkspaceSettings.objects.create(tenant=self.tenant, company_meta={**sample["company"], "name": "Ignored template company"}, initialized=True)
         for collection in COLLECTIONS:
             if collection != "users":
-                for record in sample[collection]:
+                for record in sample.get(collection, []):
                     ERPRecord.objects.create(tenant=self.tenant, collection=collection, code=record["id"], payload=record)
         self.api = APIClient()
         self.api.credentials(HTTP_AUTHORIZATION="Bearer " + str(RefreshToken.for_user(self.user).access_token), HTTP_X_TENANT_ID=str(self.tenant.pk))
@@ -84,6 +85,12 @@ class WorkspaceAPITests(TestCase):
         invited = self.command("user", {"name": "Sales Person", "phone": "9876543222", "role": "Sales"})
         self.assertEqual(invited.status_code, 200, invited.data)
         sales = User.objects.get(phone_e164="+919876543222")
+        invitation=CompanyInvitation.objects.get(tenant=self.tenant,phone=sales.phone_e164)
+        token=invitation.communication.content.rsplit('invite=',1)[-1]
+        sales.phone_verified_at=timezone.now();sales.save(update_fields=['phone_verified_at'])
+        self.api.force_authenticate(sales)
+        accepted=self.api.post('/api/v1/workspace-ui/invitations/accept/',{'token':token,'name':'Sales Person'},format='json')
+        self.assertEqual(accepted.status_code,200,accepted.data)
         self.api.credentials(HTTP_AUTHORIZATION="Bearer " + str(RefreshToken.for_user(sales).access_token), HTTP_X_TENANT_ID=str(self.tenant.pk))
         workspace = self.api.get("/api/v1/workspace-ui/workspace/")
         self.assertEqual(workspace.data["user"]["role"], "Sales")
@@ -91,7 +98,7 @@ class WorkspaceAPITests(TestCase):
         self.assertNotIn("cost", workspace.data["data"]["items"][0])
         self.assertNotIn("stock", workspace.data["data"]["items"][0])
         self.assertEqual(self.command("receive", {"qty": 1}, "PO-001").status_code, 403)
-        self.assertEqual(self.api.get("/api/v1/workspace-ui/records/items/").status_code, 403)
+        self.assertEqual(self.api.get("/api/v1/workspace-ui/records/items/").status_code, 200)
         self.assertEqual(self.command("quote", {"customer": "C-001", "item": "SKU-001", "qty": 1, "amount": 100, "gst": 5}).status_code, 200)
 
     def test_unknown_tenant_anonymous_and_subscription_restrictions(self):
@@ -115,7 +122,7 @@ class WorkspaceAPITests(TestCase):
         first = self.api.get("/api/v1/workspace-ui/workspace/")
         self.assertEqual(first.status_code, 200, first.data)
         self.assertEqual(first.data["data"]["customers"][0]["name"], customer.name)
-        self.assertEqual(first.data["data"]["items"][0]["stock"], 17)
+        self.assertNotIn("stock",first.data["data"]["items"][0])
         self.assertEqual(first.data["data"]["invoices"], [])
         self.api.get("/api/v1/workspace-ui/workspace/")
         self.assertEqual(ERPRecord.objects.filter(tenant=self.other, collection="items").count(), 1)
@@ -131,7 +138,7 @@ class WorkspaceAPITests(TestCase):
     def test_staff_manager_cannot_grant_permissions_they_do_not_hold(self):
         self.member.is_tenant_admin = False; self.member.save()
         role = Role.objects.create(tenant=self.tenant, code="admin-assistant", name="Admin assistant")
-        permission = BusinessPermission.objects.create(code="staff.manage", name="Manage staff", module="staff")
+        permission,_ = BusinessPermission.objects.get_or_create(code="staff.manage", defaults={"name":"Manage staff", "module":"staff"})
         RolePermission.objects.create(role=role, permission=permission)
         UserRole.objects.create(tenant=self.tenant, user=self.user, role=role)
         response = self.command("user", {"name": "New Administrator", "phone": "9876543234", "role": "Admin"})

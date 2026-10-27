@@ -37,11 +37,16 @@ COLLECTION_ACCESS = {
     "approvals": ("approval", "approvals"), "tasks": ("task", "tasks"),
     "users": ("staff", "basic"),
     "payouts": ("payment", "basic"),
+    "boms": ("job", "work_orders"),
+    "qcInspections": ("job", "work_orders"),
 }
 COMMAND_ACCESS = {
     "lead": ("lead.add", "basic"), "customer": ("customer.create", "basic"),
     "quote": ("quotation.create", "basic"), "order": ("order.create", "basic"),
     "job": ("job.create", "work_orders"), "job-update": ("job.progress", "work_orders"),
+    "job-assign": ("job.assign", "work_orders"), "job-split": ("job.assign", "work_orders"),
+    "order-confirm": ("order.post", "basic"), "lead-update": ("lead.edit", "basic"),
+    "order-cancel": ("order.edit", "basic"), "quote-status": ("quotation.edit", "basic"),
     "supplier": ("supplier.create", "purchase"), "purchase": ("purchase.create", "purchase"),
     "receive": ("purchase.receive", "purchase"), "item": ("item.create", "inventory"),
     "stock": ("stock.adjust", "inventory"), "dispatch": ("dispatch.create", "dispatch"),
@@ -55,6 +60,8 @@ COMMAND_ACCESS = {
     "approval-approve": ("approval.decide", "approvals"), "approval-reject": ("approval.decide", "approvals"),
     "task-done": ("task.edit", "tasks"), "user-toggle": ("staff.manage", "basic"),
     "payroll-finalize": ("payroll.finalize", "payroll"), "company-save": ("settings.manage", "basic"),
+    "bom": ("job.create", "work_orders"), "qc-inspection": ("job.progress", "work_orders"),
+    "bom-explode": ("job.view", "work_orders"), "job-schedule": ("job.progress", "work_orders"),
     "payout": ("payment.record", "basic"),
     "approval": ("approval.manage", "approvals"),
 }
@@ -62,7 +69,8 @@ COMMAND_ACCESS = {
 
 def role_for(membership):
     if membership.is_tenant_admin:
-        return "Owner"
+        owner_id = membership.tenant.owner_id or TenantMembership.objects.filter(tenant=membership.tenant, is_tenant_admin=True).order_by("id").values_list("user_id", flat=True).first()
+        return "Owner" if membership.user_id == owner_id else "Co-owner"
     now = timezone.now()
     assignment = UserRole.objects.filter(
         tenant=membership.tenant, user=membership.user, is_active=True, role__is_active=True,
@@ -71,17 +79,8 @@ def role_for(membership):
              Q(valid_to__isnull=True) | Q(valid_to__gt=now)).select_related("role").first()
     if not assignment:
         return "Viewer"
-    label = (assignment.role.name + " " + assignment.role.code).lower()
-    for role, aliases in {
-        "Owner": ("owner",), "Admin": ("admin",), "Production": ("production", "factory"),
-        "Purchase": ("purchase", "procurement"), "Store": ("store", "warehouse"),
-        "Accounts": ("account", "finance", "cashier"), "HR": ("hr", "human", "people"),
-        "Sales": ("sales",), "Viewer": ("viewer", "read-only"),
-    }.items():
-        if any(alias in label for alias in aliases):
-            return role
-    # A custom role retains only its real granular permissions below.
-    return "Admin"
+    label = assignment.role.name
+    return f"{label} (company role)" if label.lower() in ("owner", "erp owner", "co-owner") else label
 
 
 def plan_for(tenant):
@@ -106,7 +105,11 @@ def resolve(request):
 
 
 def can_collection(request, collection):
+    if collection == "stockMoves":
+        return False
     permission, feature = COLLECTION_ACCESS[collection]
+    if collection == "items":
+        feature = "basic"
     if feature not in enabled_features(request):
         return False
     code = "staff.manage" if collection == "users" else permission + ".view"
@@ -117,21 +120,26 @@ def public_user(request, membership):
     tenant = membership.tenant
     role, plan = role_for(membership), plan_for(tenant)
     collections = [c for c in COLLECTION_MODULE if can_collection(request, c)
-                   and COLLECTION_MODULE[c] in ROLE_MODULES[role]
-                   and COLLECTION_MODULE[c] in PLANS[plan]["modules"]]
-    modules = {COLLECTION_MODULE[c] for c in collections}
+                   and ("sales" if c == "items" else COLLECTION_MODULE[c]) in PLANS[plan]["modules"]]
+    modules = {"sales" if c == "items" else COLLECTION_MODULE[c] for c in collections}
     if has_permission(request, "workspace.view"):
         modules.add("dashboard")
     if has_permission(request, "report.view") or has_permission(request, "profitability.view") or has_permission(request, "financial_statement.view"):
         modules.add("reports")
     if has_permission(request, "settings.view") or has_permission(request, "settings.manage"):
         modules.add("settings")
-    modules &= ROLE_MODULES[role] & PLANS[plan]["modules"]
+    modules &= PLANS[plan]["modules"]
+    modules.discard("inventory")
     user_data = {
-        "name": membership.user.get_full_name() or membership.user.email,
+        "name": membership.user.get_full_name() or membership.user.username,
         "phone": membership.user.phone, "role": role, "company": tenant.name,
         "tenant": tenant.slug, "tenant_id": tenant.pk, "plan": plan,
         "cap": tenant.plan.user_limit if tenant.plan_id else PLANS[plan]["cap"],
+        "can_assign_jobs": has_permission(request, "job.assign"),
+        "can_manage_team": has_permission(request, "staff.manage"),
+        "can_manage_roles": has_permission(request, "roles.assign"),
+        "can_view_private_employee": has_permission(request, "employee.view_private"),
+        "is_owner": role == "Owner",
         "status": tenant.status,
         "can_view_billing": can_view_company_billing(request.user, tenant),
         "can_edit_company": can_view_company_billing(request.user, tenant),
@@ -146,8 +154,7 @@ def public_user(request, membership):
                             .values("tenant_id", "tenant__name", "is_tenant_admin")),
     }
     user_data["commands"] = [name for name,(permission,feature) in COMMAND_ACCESS.items()
-        if role!="Viewer" and feature in enabled_features(request) and has_permission(request,permission)
-        and (FORM_MODULE.get(name) or ACTION_MODULE.get(name)) in ROLE_MODULES[role]
+        if name != "stock" and (feature in enabled_features(request) or name == "item") and has_permission(request,permission)
         and (name!="company-save" or user_data["can_edit_company"])]
     if user_data["can_view_billing"]:
         user_data.update(price=float(tenant.agreed_monthly_price) if tenant.agreed_monthly_price is not None else None,
@@ -163,14 +170,15 @@ def authorize_command(request, name):
     if name not in COMMAND_ACCESS:
         raise PermissionDenied("Unsupported workspace command.")
     permission, feature = COMMAND_ACCESS[name]
+    if name == "stock":
+        raise PermissionDenied("Inventory is hidden for this release.")
+    if name == "item":
+        feature = "basic"
     if feature not in enabled_features(request) or not has_permission(request, permission):
         raise PermissionDenied("Your company role or subscription does not allow this action.")
     # Commands combine resources; enforce permissions on every changed ledger.
     extra = {
         "quote-convert": ("order.create",), "lead-convert": ("customer.create",),
-        "receive": ("stock.inward",), "dispatch": ("stock.issue",),
     }
     if any(not has_permission(request, code) for code in extra.get(name, ())):
         raise PermissionDenied("Your role cannot change the linked records for this action.")
-    if name in ("receive", "dispatch") and "inventory" not in enabled_features(request):
-        raise PermissionDenied("Inventory must be enabled for this stock operation.")

@@ -26,7 +26,7 @@ class OwnerDemoTests(TestCase):
         api=APIClient();api.force_authenticate(owner);api.credentials(HTTP_X_TENANT_ID=str(tenant.pk))
         workspace=api.get("/api/v1/workspace-ui/workspace/")
         self.assertEqual(workspace.status_code,200,workspace.data)
-        self.assertEqual(len(workspace.data["user"]["modules"]),11)
+        self.assertEqual(len(workspace.data["user"]["modules"]),10)
         self.assertEqual(len(workspace.data["data"]["users"]),1)
         record=ERPRecord.objects.filter(tenant=tenant,collection="tasks").first()
         record.payload["title"]="My test change";record.save()

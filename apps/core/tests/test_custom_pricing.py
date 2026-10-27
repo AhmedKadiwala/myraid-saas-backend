@@ -1,5 +1,6 @@
 from datetime import timedelta
 from decimal import Decimal
+from django.conf import settings
 from django.test import TestCase
 from django.utils import timezone
 from rest_framework.test import APIClient
@@ -15,10 +16,10 @@ class CustomPricingTests(TestCase):
         before = timezone.now()
         tenant, expiry, quote = create_company_workspace(self.user, "New Trial Company", ["purchase", "inventory"])
         after = timezone.now()
-        self.assertGreaterEqual(expiry, before + timedelta(days=7))
-        self.assertLessEqual(expiry, after + timedelta(days=7))
+        self.assertGreaterEqual(expiry, before + timedelta(days=settings.ERP_TRIAL_DAYS))
+        self.assertLessEqual(expiry, after + timedelta(days=settings.ERP_TRIAL_DAYS))
         self.assertIsNone(tenant.agreed_monthly_price)
-        self.assertEqual(quote["trial_days"], 7)
+        self.assertEqual(quote["trial_days"], settings.ERP_TRIAL_DAYS)
         self.assertEqual(quote["pricing_mode"], "negotiated")
         self.assertIsNone(quote["monthly"])
         from apps.erp.models import Entitlement
@@ -40,7 +41,8 @@ class CustomPricingTests(TestCase):
 
     def test_public_signup_announces_one_week_and_custom_pricing(self):
         response = APIClient().post("/api/v1/erp/onboard/", {
-            "company_name": "One Week Company", "name": "New Owner", "phone": "9876500099", "features": []}, format="json")
+            "company_name": "One Week Company", "name": "New Owner", "username": "newowner",
+            "password": "password123", "phone": "9876500099", "features": []}, format="json")
         self.assertEqual(response.status_code, 201, response.data)
-        self.assertEqual(response.data["trial_days"], 7)
+        self.assertEqual(response.data["trial_days"], settings.ERP_TRIAL_DAYS)
         self.assertEqual(response.data["pricing_mode"], "negotiated")

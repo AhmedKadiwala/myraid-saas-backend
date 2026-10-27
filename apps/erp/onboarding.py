@@ -44,7 +44,7 @@ def create_company_workspace(user,company_name,selected):
     quote={"pricing_mode":"negotiated","monthly":None,"currency":"INR","trial_days":settings.ERP_TRIAL_DAYS,"features":sorted(set(selected))}
     plan,_=SubscriptionPlan.objects.get_or_create(code="erp-full-trial",defaults={"name":"Full ERP access","price_monthly":0,"user_limit":50,"branch_limit":5,"storage_limit_mb":1024})
     slug=f"{slugify(company_name)[:45] or 'company'}-{uuid.uuid4().hex[:8]}";expiry=timezone.now()+timedelta(days=settings.ERP_TRIAL_DAYS)
-    tenant=Tenant.objects.create(name=company_name,slug=slug,status="trial",plan=plan,trial_ends_at=expiry)
+    tenant=Tenant.objects.create(name=company_name,owner=user,slug=slug,status="trial",plan=plan,trial_ends_at=expiry)
     branch=Branch.objects.create(tenant=tenant,name="Main branch",code="main")
     TenantMembership.objects.create(tenant=tenant,user=user,is_tenant_admin=True,default_branch=branch)
     TenantSettings.objects.create(tenant=tenant);ErpSettings.objects.create(tenant=tenant,legal_name=company_name);owner_role(tenant,user)
@@ -53,11 +53,34 @@ def create_company_workspace(user,company_name,selected):
 
 
 class OnboardInput(serializers.Serializer):
-    company_name=serializers.CharField(max_length=200);name=serializers.CharField(max_length=150);phone=serializers.CharField(max_length=16);features=serializers.ListField(child=serializers.CharField(),default=list)
+    company_name=serializers.CharField(max_length=200);name=serializers.CharField(max_length=150);username=serializers.CharField(max_length=40,required=False,allow_blank=True);password=serializers.CharField(min_length=8,required=False,allow_blank=True,write_only=True);email=serializers.EmailField(required=False,allow_blank=True);phone=serializers.CharField(max_length=16,required=False,allow_blank=True);features=serializers.ListField(child=serializers.CharField(),default=list)
     def validate(self,data):
-        phone=normalize_phone(data["phone"]);digits=phone[-10:]
-        if User.objects.filter(phone_e164=phone).exists() or User.objects.filter(phone=digits).exists():raise serializers.ValidationError("This phone number already has a Myraid identity. Sign in with OTP. Contact the super admin to add another company to your account.")
-        data["phone"]=phone;price_quote(data["features"]);return data
+        phone=data.get("phone","").strip()
+        if phone:
+            phone=normalize_phone(phone);digits=phone[-10:]
+            if User.objects.filter(phone_e164=phone).exists() or User.objects.filter(phone=digits).exists():raise serializers.ValidationError({"phone":"That phone number already belongs to an account."})
+            data["phone"]=phone
+        username=str(data.get("username") or "").strip().lower()
+        if not username:
+            base=slugify(data.get("name","")) or (phone.replace("+","") if phone else "owner")
+            cand=(base[:30] or "owner").lower()
+            if len(cand)<3:cand=f"user_{cand}"
+            base_cand=cand;suf=1
+            while User.objects.filter(username__iexact=cand).exists():
+                cand=f"{base_cand}_{suf}";suf+=1
+            data["username"]=cand
+        else:
+            if not all(c.isalnum() or c in "_.-" for c in username) or len(username)<3 or len(username)>40:
+                raise serializers.ValidationError({"username":"Choose a username using 3–40 letters, numbers, dots, dashes or underscores."})
+            if User.objects.filter(username__iexact=username).exists():raise serializers.ValidationError({"username":"That username is already taken."})
+            data["username"]=username
+        if not data.get("password"):
+            import secrets
+            data["password"]=secrets.token_urlsafe(16)
+        email=data.get("email","").strip().lower()
+        if email and User.objects.filter(email__iexact=email).exists():raise serializers.ValidationError({"email":"That email already has an account. Sign in instead."})
+        data["email"]=email
+        price_quote(data["features"]);return data
 
 
 class SignupThrottle(AnonRateThrottle):rate="5/hour"
@@ -66,11 +89,11 @@ class OnboardView(APIView):
     @transaction.atomic
     def post(self,request):
         serializer=OnboardInput(data=request.data);serializer.is_valid(raise_exception=True);data=serializer.validated_data
-        first,_,last=data["name"].partition(" ");digits="".join(ch for ch in data["phone"] if ch.isdigit())
-        user=User.objects.create_user(email=f"{digits}.{uuid.uuid4().hex[:8]}@phone.myraid.invalid",phone=data["phone"],password=None,first_name=first,last_name=last,department="admin")
-        user.set_unusable_password();user.save(update_fields=["password"])
+        first,_,last=data["name"].partition(" ")
+        email=data["email"] or f"{data['username'].lower()}.{uuid.uuid4().hex[:10]}@account.myraid.invalid"
+        user=User.objects.create_user(email=email,username=data["username"],phone=data.get("phone") or None,password=data["password"],first_name=first,last_name=last,department="admin")
         _,expiry,_=create_company_workspace(user,data["company_name"],data["features"])
-        return Response({"message":"Your one-week free trial is ready. Verify your mobile number with OTP to sign in.","phone":user.phone_e164,"trial_ends_at":expiry,"trial_days":settings.ERP_TRIAL_DAYS,"pricing_mode":"negotiated"},status=201)
+        return Response({"message":"Your workspace is ready. Sign in with your username and password.","username":user.username,"trial_ends_at":expiry,"trial_days":settings.ERP_TRIAL_DAYS,"pricing_mode":"negotiated"},status=201)
 
 
 class AddCompanyView(APIView):

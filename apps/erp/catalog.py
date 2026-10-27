@@ -32,7 +32,7 @@ PERMISSIONS = {
     "quotation": ["view", "create", "edit", "approve", "post", "convert", "export"],
     "order": ["view", "create", "edit", "approve", "post", "convert", "export"],
     "purchase": ["view", "create", "edit", "approve", "post", "receive", "convert", "export"],
-    "job": ["view", "create", "edit", "progress", "export"],
+    "job": ["view", "create", "edit", "assign", "progress", "export"],
     "dispatch": ["view", "create", "edit", "approve", "post", "convert", "export"],
     "invoice": ["view", "create", "edit", "approve", "post", "convert", "void", "export"],
     "payment": ["view", "record", "void", "export"], "payable": ["view", "create", "edit", "approve", "post", "export"],

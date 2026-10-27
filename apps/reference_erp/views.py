@@ -4,6 +4,7 @@ import json
 from uuid import UUID
 
 from django.db import transaction
+from django.utils import timezone
 from django.db.models import Q
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
@@ -15,7 +16,7 @@ from apps.erp.onboarding import install_permission_catalog
 from .access import resolve, public_user, authorize_command, COMMAND_ACCESS, COLLECTION_ACCESS, role_for
 from .engine import COLLECTIONS, COLLECTION_MODULE, ROLE_MODULES, apply, DomainError
 from .importer import initialize
-from .models import ERPRecord, WorkspaceSettings, AuditEvent, CommandReceipt
+from .models import ERPRecord, WorkspaceSettings, AuditEvent, CommandReceipt, OrderAttachment, CompanyInvitation
 
 
 def get_state(tenant):
@@ -25,9 +26,19 @@ def get_state(tenant):
         if record.collection in state and record.collection != "users":
             state[record.collection].append(record.payload)
     for membership in TenantMembership.objects.filter(tenant=tenant).select_related("user", "tenant").order_by("id"):
-        state["users"].append({"id": f"U-{membership.pk:03d}", "name": membership.user.get_full_name() or membership.user.email,
+        state["users"].append({"id": f"U-{membership.pk:03d}", "name": membership.user.get_full_name() or membership.user.username,
+                               "username": membership.user.username,
                                "phone": membership.user.phone_e164[-10:] if membership.user.phone_e164 else membership.user.phone,
                                "role": role_for(membership), "status": "Active" if membership.is_active and membership.user.is_active else "Inactive"})
+    for order in state["orders"]:
+        order["attachments"] = list(OrderAttachment.objects.filter(tenant=tenant, order_code=order["id"]).values("id", "name", "size"))
+    from apps.erp.models import Entitlement
+    state["inventory_enabled"] = Entitlement.objects.filter(
+        tenant=tenant,
+        feature="inventory",
+        enabled=True,
+        expires_at__gt=timezone.now(),
+    ).exists()
     state.update(company={**workspace.company_meta, "name": tenant.name}, toggles=workspace.toggles,
                  version=2, audit=[{"text": e.message, "at": e.created_at.strftime("%d %b %Y %H:%M")}
                                   for e in AuditEvent.objects.filter(tenant=tenant)[:70]])
@@ -41,19 +52,25 @@ def filtered_state(request, member, state):
         if collection not in user["collections"]:
             result[collection] = []
     from apps.erp.security import has_permission
+    from .team import invitation_data, available_roles, role_data
+    result["roles"] = [role_data(r, member.tenant) for r in available_roles(member.tenant)] if has_permission(request, "staff.manage") else []
+    result["invitations"] = [invitation_data(i) for i in CompanyInvitation.objects.filter(tenant=member.tenant).select_related("role", "communication").order_by("-id")] if has_permission(request, "staff.manage") else []
+    result["workers"] = [{k:v for k,v in e.items() if k in ("id", "name", "phone", "department", "role", "status")} for e in state["employees"] if e.get("status") == "Active"] if has_permission(request, "job.assign") else []
     if any(c in user["collections"] for c in ("quotes", "orders", "purchases")) and "items" not in user["collections"]:
         result["items"] = [{k: v for k, v in item.items() if k in ("id", "name", "sku", "unit", "rate", "hsn")}
                            for item in state["items"]]
     if not has_permission(request, "stock.view_cost"):
         result["items"] = [{k: v for k, v in item.items() if k != "cost"} for item in result["items"]]
+    result["items"] = [{k:v for k,v in item.items() if k not in ("stock", "min")} for item in result["items"]]
+    if not has_permission(request, "stock.view_cost"):
         result["invoices"] = [{k:v for k,v in invoice.items() if k not in ("cogs","cost_basis")} for invoice in result["invoices"]]
     if any(c in user["collections"] for c in ("invoices", "payments", "jobs", "dispatches")) and "orders" not in user["collections"]:
-        result["orders"] = [{k: v for k, v in order.items() if k in ("id", "customer", "item", "qty", "status", "due")}
+        result["orders"] = [{k: v for k, v in order.items() if k in ("id", "customer", "item", "qty", "status", "due", "attachments")}
                             for order in state["orders"]]
     if any(c in user["collections"] for c in ("orders", "invoices", "jobs", "dispatches")) and "customers" not in user["collections"]:
         result["customers"] = [{"id": c["id"], "name": c["name"]} for c in state["customers"]]
     if not has_permission(request, "employee.view_private"):
-        result["employees"] = [{k: v for k, v in e.items() if k not in ("salary", "phone")} for e in result["employees"]]
+        result["employees"] = [{k: v for k, v in e.items() if k != "salary"} for e in result["employees"]]
     if "payouts" in user["collections"] and "employees" not in user["collections"]:
         result["employees"] = [{"id": e["id"], "name": e["name"]} for e in state["employees"]]
     if "payouts" in user["collections"] and "payroll" not in user["collections"]:
@@ -69,53 +86,6 @@ def response_for(request, member, result=None):
         value["result"] = result
     return Response(value)
 
-
-def invite(tenant, record, request):
-    actor = request.user
-    phone = "+91" + record["phone"]
-    user = User.objects.filter(Q(phone_e164=phone) | Q(phone=record["phone"])).first()
-    if user and TenantMembership.objects.filter(tenant=tenant, user=user).exists():
-        raise ValidationError("This mobile number already belongs to the company.")
-    if user and not user.is_active:
-        raise ValidationError("This identity is inactive. Contact the account administrator.")
-    if not user:
-        first, _, last = record["name"].partition(" ")
-        if len(first) > 150 or len(last) > 150:
-            raise ValidationError("First and last names must each be at most 150 characters.")
-        user = User.objects.create_user(email=f"{record['phone']}@phone.workspace.invalid", phone=phone,
-                                        first_name=first, last_name=last, password=None)
-    if record["role"] in ("Owner", "Admin") and not request.tenant_membership.is_tenant_admin:
-        raise PermissionDenied("Only a company administrator can appoint another administrator.")
-    membership = TenantMembership.objects.create(tenant=tenant, user=user, is_tenant_admin=record["role"] in ("Owner", "Admin"))
-    install_permission_catalog()
-    role, _ = Role.objects.get_or_create(tenant=tenant, code="workspace-" + record["role"].lower(),
-                                         defaults={"name": record["role"], "is_system": True})
-    allowed_modules = ROLE_MODULES[record["role"]]
-    codes = {permission + ".view" for collection, (permission, _) in COLLECTION_ACCESS.items()
-             if COLLECTION_MODULE[collection] in allowed_modules and collection != "users"}
-    if record["role"] != "Viewer":
-        for command, (permission, _) in COMMAND_ACCESS.items():
-            from .engine import FORM_MODULE, ACTION_MODULE
-            module = FORM_MODULE.get(command) or ACTION_MODULE.get(command)
-            if module in allowed_modules:
-                codes.add(permission)
-        if "inventory" in allowed_modules:
-            codes.update({"stock.inward", "stock.issue"})
-    if "dashboard" in allowed_modules:
-        codes.add("workspace.view")
-    if "reports" in allowed_modules:
-        codes.add("report.view")
-    if record["role"] in ("Owner", "Admin", "HR"):
-        codes.add("employee.view_private")
-    from apps.erp.security import has_permission
-    if not TenantMembership.objects.filter(tenant=tenant, user=actor, is_active=True, is_tenant_admin=True).exists():
-        if any(not has_permission(request, code) for code in codes):
-            raise PermissionDenied("You cannot invite a role with permissions beyond your own grants.")
-    for code in codes:
-        permission, _ = BusinessPermission.objects.get_or_create(code=code, defaults={"name": code, "module": code.split(".")[0]})
-        RolePermission.objects.get_or_create(role=role, permission=permission)
-    UserRole.objects.create(tenant=tenant, user=user, role=role, assigned_by=actor)
-    return membership
 
 
 class WorkspaceView(APIView):
@@ -171,6 +141,20 @@ class CommandsView(APIView):
             inputs = body.get("input", {})
             if not isinstance(inputs, dict):
                 raise ValidationError("Command input must be an object.")
+            if name == "user":
+                from .team import create_invitation
+                invitation, share_url = create_invitation(request, inputs)
+                result = {"id": str(invitation.pk), "share_url": share_url, "message": "Invitation created. WhatsApp queued." if invitation.communication and invitation.communication.status == "queued" else "Invitation pending. Connect WhatsApp and resend to deliver it."}
+                CommandReceipt.objects.create(tenant=tenant, user=request.user, request_id=request_id, fingerprint=fingerprint, response_data=result)
+                return response_for(request, member, result)
+            if name == "job-update" and any(k in inputs for k in ("worker", "assignee")):
+                raise ValidationError("Use the Assign job action to change the worker.")
+            if name == "job-assign":
+                body = {**body, "input": {**inputs, "assigned_by": {"id": request.user.pk, "name": request.user.get_full_name() or request.user.phone, "phone": request.user.phone_e164 or request.user.phone}}}
+            if name == "employee":
+                from .access import has_permission
+                if not has_permission(request, "employee.view_private") and inputs.get("salary") not in (None, "", 0, "0"):
+                    raise PermissionDenied("You cannot set salary without private employee access.")
             if name == "approval":
                 body = {**body, "input": {**inputs, "by": request.user.get_full_name() or request.user.email}}
             # Preserve full multi-line and regulated legacy workflows instead of flattening them.
@@ -185,22 +169,20 @@ class CommandsView(APIView):
                 if target and target["status"] == "Inactive" and len([u for u in prior["users"] if u["status"] == "Active"]) >= user["cap"]:
                     raise ValidationError("Your subscription's active user limit has been reached.")
             try:
-                after, result = apply(prior, body, user["role"], user["plan"])
+                # Granular permissions have already been enforced above; role names
+                # are display labels and must not constrain custom company roles.
+                after, result = apply(prior, body, "Admin", user["plan"])
             except DomainError as exc:
                 raise ValidationError(str(exc))
             except PermissionError as exc:
                 raise PermissionDenied(str(exc))
-            if name == "user":
-                record = next(r for r in after["users"] if r["id"] == result["id"])
-                if record["role"] == "Owner" and not member.is_tenant_admin:
-                    raise PermissionDenied("Only a company owner can appoint another owner.")
-                invited = invite(tenant, record, request)
-                result["id"] = f"U-{invited.pk:03d}"
             if name == "user-toggle":
                 record = next(r for r in after["users"] if r["id"] == result["id"])
                 target = TenantMembership.objects.get(tenant=tenant, pk=int(record["id"].split("-")[-1]))
-                if target.is_tenant_admin or target.user_id == request.user.pk:
+                if target.user_id == tenant.owner_id or target.user_id == request.user.pk:
                     raise ValidationError("Company owners and your own membership cannot be deactivated.")
+                if target.is_tenant_admin and not member.is_tenant_admin:
+                    raise PermissionDenied("Only owners and co-owners can deactivate a co-owner.")
                 target.is_active = record["status"] == "Active"
                 target.save(update_fields=["is_active", "updated_at"])
             for collection in COLLECTIONS:

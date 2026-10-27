@@ -1,6 +1,6 @@
 # Myraid SaaS Backend
 
-Django REST Framework backend for Myraid ERP SaaS. It includes company-isolated ERP and Sales records, phone OTP authentication, per-company dynamic RBAC, Celery tasks, billing hooks, private documents and API documentation.
+Django REST Framework backend for Myraid ERP SaaS. It includes company-isolated ERP and Sales records, username/password authentication with optional email recovery, per-company dynamic RBAC, Celery tasks, billing hooks, private documents and API documentation. Phone OTP endpoints remain available for existing accounts during transition.
 
 ## Setup
 

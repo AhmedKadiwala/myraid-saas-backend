@@ -58,3 +58,12 @@ def enforce_subscription_statuses():
         count += 1
     return count
 
+
+@shared_task
+def purge_expired_r2_documents():
+    """
+    Periodic task to prune documents that have passed their 30-day retention window in Cloudflare R2.
+    Permanent records in PostgreSQL remain intact for on-demand regeneration.
+    """
+    from .r2_storage import cleanup_expired_r2_documents
+    return cleanup_expired_r2_documents()

@@ -40,18 +40,23 @@ from .models import (
 
 class UserSerializer(serializers.ModelSerializer):
     name = serializers.SerializerMethodField()
+    email = serializers.SerializerMethodField()
     code = serializers.CharField(source="quotation_code", read_only=True)
+    username = serializers.CharField(read_only=True)
 
     class Meta:
         model = User
         fields = (
-            "id", "first_name", "last_name", "name", "email", "phone",
+            "id", "first_name", "last_name", "name", "username", "email", "phone",
             "department", "quotation_code", "code", "platform_admin",
         )
         read_only_fields = ("platform_admin",)
 
     def get_name(self, obj):
         return obj.get_full_name()
+
+    def get_email(self, obj):
+        return "" if obj.email.endswith(".myraid.invalid") else obj.email
 
 
 class SignupSerializer(serializers.ModelSerializer):

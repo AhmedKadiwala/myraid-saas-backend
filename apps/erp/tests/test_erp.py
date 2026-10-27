@@ -377,7 +377,7 @@ class PhoneOTPTestCase(TestCase):
 
     def test_same_phone_user_has_different_role_in_different_companies(self):
         for code,module in [("workspace.view","workspace"),("item.view","item"),("payment.record","payment")]:
-            BusinessPermission.objects.create(code=code,name=code,module=module)
+            BusinessPermission.objects.get_or_create(code=code,defaults={"name":code,"module":module})
         other=Tenant.objects.create(name="Second Company",slug="second-company",status="active")
         other_branch=Branch.objects.create(tenant=other,name="Only Branch",code="main")
         TenantMembership.objects.create(tenant=other,user=self.user,default_branch=other_branch)

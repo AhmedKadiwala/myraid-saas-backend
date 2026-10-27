@@ -344,6 +344,7 @@ class RequestOTPView(APIView):
 
         otp = LoginOTP.objects.create(
             user=user,
+            phone=phone,
             otp_code=code,
             code_hash=make_password(code),
             otp_token_hash=hash_otp_token(otp_token),

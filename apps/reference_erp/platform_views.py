@@ -1,5 +1,6 @@
 """Owner-only tenant provisioning and manual subscription receivables. UPI integration is planned."""
 import calendar
+import secrets
 import uuid
 from datetime import date, timedelta
 from decimal import Decimal
@@ -231,3 +232,164 @@ class CompanyBillingView(APIView):
         member=TenantMembership.objects.select_related("tenant").filter(user=request.user,tenant_id=tenant_id,is_active=True,is_tenant_admin=True).first()
         if not member:raise PermissionDenied("Company-admin billing access is required.")
         return Response(billing_data(member.tenant))
+
+
+def is_sales_rep(user):
+    return user.is_authenticated and (
+        user.is_superuser
+        or user.platform_admin
+        or getattr(user, "platform_sales_rep", False)
+        or user.department == "sales"
+    )
+
+
+class SalesRepPermission(BasePermission):
+    def has_permission(self, request, view):
+        return is_sales_rep(request.user)
+
+
+class SalesRepAPI(APIView):
+    authentication_classes = [CookieOrHeaderJWTAuthentication]
+    permission_classes = [SalesRepPermission]
+
+
+class SalesRepDashboardView(SalesRepAPI):
+    """
+    Allows sales representatives to track their assigned companies, user counts,
+    free trials, paid subscriptions, and revenue metrics.
+    """
+    def get(self, request):
+        is_owner = is_platform_owner(request.user) or request.user.is_superuser
+        qs = Tenant.objects.select_related("plan", "sales_rep").prefetch_related("memberships").order_by("-created_at")
+        if not is_owner:
+            qs = qs.filter(sales_rep=request.user)
+
+        companies = []
+        total_billable = 0
+        trials_count = 0
+        paid_count = 0
+        total_monthly_revenue = Decimal("0.00")
+        total_collected = Decimal("0.00")
+
+        now = timezone.now()
+        for t in qs:
+            billable = t.billable_users_count
+            total_billable += billable
+            is_trial = bool(t.status == "trial" and t.trial_ends_at and t.trial_ends_at > now)
+            if is_trial:
+                trials_count += 1
+            elif t.status == "active":
+                paid_count += 1
+
+            monthly_price = Decimal(str(t.calculate_monthly_price()))
+            if not is_trial and not t.complimentary_access:
+                total_monthly_revenue += monthly_price
+
+            payments_sum = t.platform_payments.aggregate(total=Sum("amount"))["total"] or ZERO
+            total_collected += payments_sum
+
+            days_left = max(0, (t.trial_ends_at - now).days) if is_trial else 0
+
+            companies.append({
+                "id": t.pk,
+                "name": t.name,
+                "slug": t.slug,
+                "status": t.status,
+                "plan": t.plan.code if t.plan else "basic",
+                "plan_name": t.plan.name if t.plan else "Basic ERP",
+                "billable_users": billable,
+                "is_trial": is_trial,
+                "trial_days_left": days_left,
+                "trial_ends_at": t.trial_ends_at.isoformat() if t.trial_ends_at else None,
+                "monthly_price": float(monthly_price),
+                "total_collected": float(payments_sum),
+                "sales_rep": t.sales_rep.get_full_name() or t.sales_rep.username if t.sales_rep else "Unassigned",
+                "sales_rep_id": t.sales_rep_id,
+                "created_at": t.created_at.isoformat(),
+            })
+
+        return Response({
+            "metrics": {
+                "assigned_companies": len(companies),
+                "billable_users": total_billable,
+                "free_trials": trials_count,
+                "paid_subscriptions": paid_count,
+                "monthly_recurring_revenue": float(total_monthly_revenue),
+                "total_collected_revenue": float(total_collected),
+            },
+            "pricing_reference": {
+                "basic": 250,
+                "advanced": 300,
+                "premium": 350,
+                "rule": "Total monthly price = billable users * selected plan price",
+            },
+            "companies": companies,
+        })
+
+
+class SalesRepInviteCompanyView(SalesRepAPI):
+    """
+    Allows sales representatives to invite companies with default 14-day trials (up to 30 days)
+    and per-user pricing tiers (Basic ₹250, Advanced ₹300, Premium ₹350).
+    """
+    @transaction.atomic
+    def post(self, request):
+        company_name = str(request.data.get("company_name", "")).strip()
+        admin_name = str(request.data.get("admin_name", "")).strip()
+        phone_raw = str(request.data.get("phone", "")).strip()
+        plan_code = str(request.data.get("plan", "advanced")).lower().strip()
+        trial_days = int(request.data.get("trial_days", getattr(settings, "ERP_TRIAL_DAYS", 14)))
+
+        if not company_name or len(company_name) > 160:
+            raise ValidationError({"company_name": "Enter a company name up to 160 characters."})
+        if not admin_name:
+            raise ValidationError({"admin_name": "Enter the company owner/admin name."})
+        phone = normalize_phone(phone_raw)
+
+        # Enforce maximum 30 days trial extension
+        trial_days = max(1, min(30, trial_days))
+
+        if plan_code not in ("basic", "advanced", "premium", "recommended", "full"):
+            raise ValidationError({"plan": "Choose basic, advanced, or premium plan."})
+
+        from apps.core.models import SubscriptionPlan
+        plan_rates = {"basic": 250, "advanced": 300, "premium": 350, "recommended": 300, "full": 350}
+        plan, _ = SubscriptionPlan.objects.get_or_create(
+            code=plan_code,
+            defaults={"name": f"{plan_code.title()} ERP", "price_monthly": plan_rates[plan_code], "user_limit": 50, "branch_limit": 5}
+        )
+
+        user = User.objects.filter(Q(phone_e164=phone) | Q(phone=phone[-10:])).first()
+        if user and not user.is_active:
+            raise ValidationError("The company administrator identity is inactive.")
+        if not user:
+            first, _, last = admin_name.partition(" ")
+            user = User.objects.create_user(
+                email=f"{phone[1:]}.{secrets.token_hex(4)}@phone.workspace.invalid",
+                phone=phone,
+                first_name=first,
+                last_name=last,
+                password=None,
+                department="admin"
+            )
+
+        tenant, expiry, quote = create_company_workspace(user, company_name, [k for k in FEATURES if k != "gst_integrations"])
+        tenant.sales_rep = request.user
+        tenant.plan = plan
+        tenant.trial_ends_at = timezone.now() + timedelta(days=trial_days)
+        tenant.save(update_fields=["sales_rep", "plan", "trial_ends_at"])
+
+        audit(actor=request.user, tenant=tenant, action="sales_rep.company.invited", resource=tenant,
+              after={"company": tenant.name, "sales_rep": request.user.username, "plan": plan_code, "trial_days": trial_days})
+
+        return Response({
+            "tenant_id": tenant.pk,
+            "company_name": tenant.name,
+            "owner": admin_name,
+            "phone": phone,
+            "plan": plan_code,
+            "trial_days": trial_days,
+            "trial_ends_at": tenant.trial_ends_at.isoformat(),
+            "monthly_price_per_user": plan_rates[plan_code],
+            "message": f"Company {tenant.name} provisioned with {trial_days}-day trial assigned to {request.user.get_full_name() or request.user.username}.",
+        }, status=201)

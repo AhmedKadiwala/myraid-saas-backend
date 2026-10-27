@@ -41,11 +41,11 @@ class TenantRBACTestCase(TestCase):
         self.branch_a2 = Branch.objects.create(
             tenant=self.a, name="A2", code="a2"
         )
-        self.permission_view = BusinessPermission.objects.create(
-            code="lead.view", name="View lead", module="leads"
+        self.permission_view, _ = BusinessPermission.objects.get_or_create(
+            code="lead.view", defaults={"name":"View lead", "module":"leads"}
         )
-        self.permission_add = BusinessPermission.objects.create(
-            code="lead.add", name="Add lead", module="leads"
+        self.permission_add, _ = BusinessPermission.objects.get_or_create(
+            code="lead.add", defaults={"name":"Add lead", "module":"leads"}
         )
 
     def role(self, code, permission, tenant=None, approved=True):
@@ -74,8 +74,8 @@ class TenantRBACTestCase(TestCase):
         self.assertIn("lead.view", permissions)
 
     def test_tenant_admin_receives_every_active_business_permission(self):
-        BusinessPermission.objects.create(
-            code="payroll.finalize", name="Finalize payroll", module="payroll"
+        BusinessPermission.objects.get_or_create(
+            code="payroll.finalize", defaults={"name":"Finalize payroll", "module":"payroll"}
         )
         TenantMembership.objects.filter(tenant=self.a, user=self.user).update(
             is_tenant_admin=True

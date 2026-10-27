@@ -186,6 +186,10 @@ ADMIN_MODEL_DISPLAY_NAMES = {
     "core.Branch": "Branches",
     "core.Company": "Companies",
     "core.TenantSettings": "Tenant settings",
+    "core.BusinessPermission": "Permissions — allowed actions",
+    "core.Role": "Roles — named sets of permissions",
+    "core.RolePermission": "Role permissions — actions allowed by a role",
+    "core.UserRole": "Person roles — company access assignments",
     "erp.ApiCredential": "API credentials",
     "erp.ErpSettings": "ERP settings",
     "erp.ExpenseCategory": "Expense categories",
@@ -231,18 +235,18 @@ CORE_LIST_DISPLAY = {
         "tenant", "name", "code", "is_active", "created_at", "updated_at",
     ),
     "TenantMembership": (
-        "tenant", "user", "is_tenant_admin", "is_active", "default_branch", "created_at",
+        "tenant", "user_name", "user_phone", "is_tenant_admin", "is_active", "default_branch", "created_at",
     ),
     "BusinessPermission": (
         "module", "code", "name", "is_active", "created_at",
     ),
     "Role": (
-        "tenant", "name", "code", "is_system", "approved_for_tenant_assignment",
+        "name", "role_scope", "tenant", "description", "permission_count", "person_count", "is_system", "approved_for_tenant_assignment",
         "is_active", "created_at",
     ),
-    "RolePermission": ("role", "permission", "created_at"),
+    "RolePermission": ("role", "permission", "permission_module", "created_at"),
     "UserRole": (
-        "tenant", "user", "role", "is_active", "valid_from", "valid_to", "assigned_by",
+        "tenant", "user_name", "user_phone", "role", "is_active", "valid_from", "valid_to", "assigned_by",
     ),
     "AuditLog": (
         "created_at", "tenant", "actor", "action", "resource_type", "resource_id", "ip_address",
@@ -314,6 +318,35 @@ class SmartCoreAdmin(admin.ModelAdmin):
     list_per_page = 50
     save_on_top = True
     empty_value_display = "-"
+    change_list_template = "admin/model_explanation.html"
+
+    def changelist_view(self, request, extra_context=None):
+        descriptions = {"BusinessPermission": "One action the ERP can permit, grouped by module. Example: Assign job orders.", "Role": "A named set of permissions. Global roles are available to every company; company-specific roles belong to one company.", "RolePermission": "Connects one role to one allowed action. Company owners use permission checkboxes instead of editing these links manually.", "UserRole": "Assigns a person a role within one company. Name and phone identify the person; assigned by records who granted access.", "TenantMembership": "Connects a login account to a company. Factory worker records are separate and do not grant login access."}
+        return super().changelist_view(request, {**(extra_context or {}), "model_purpose": descriptions.get(self.model.__name__, f"Manage {self.model._meta.verbose_name_plural}. Person references display their name and phone number.")})
+
+    @admin.display(description="Person name")
+    def user_name(self, obj):
+        return obj.user.get_full_name() or obj.user.email
+
+    @admin.display(description="Phone number")
+    def user_phone(self, obj):
+        return obj.user.phone
+
+    @admin.display(description="Scope")
+    def role_scope(self, obj):
+        return "Company-specific" if obj.tenant_id else "Global"
+
+    @admin.display(description="Permissions")
+    def permission_count(self, obj):
+        return obj.permission_links.count()
+
+    @admin.display(description="Assigned people")
+    def person_count(self, obj):
+        return obj.user_assignments.filter(is_active=True).count()
+
+    @admin.display(description="Module")
+    def permission_module(self, obj):
+        return obj.permission.module
 
     @admin.display(description="Assigned users")
     def assigned_users(self, obj):
@@ -322,7 +355,7 @@ class SmartCoreAdmin(admin.ModelAdmin):
             return "-"
         values = []
         for user in manager.all()[:8]:
-            values.append(getattr(user, "email", str(user)))
+            values.append(str(user))
         if not values:
             return "-"
         suffix = " …" if manager.count() > len(values) else ""
@@ -372,7 +405,7 @@ class SmartCoreAdmin(admin.ModelAdmin):
                 continue
             if isinstance(field, (models.ForeignKey, models.OneToOneField)) and field.related_model:
                 related_names = {f.name: f for f in field.related_model._meta.get_fields()}
-                for candidate in ("email", "name", "title", "code", "number", "slug"):
+                for candidate in ("phone", "email", "name", "title", "code", "number", "slug"):
                     related_field = related_names.get(candidate)
                     if isinstance(related_field, text_types):
                         result.append(f"{field.name}__{candidate}")
@@ -426,6 +459,15 @@ class MyraidUserAdmin(UserAdmin):
     ordering = ("email",)
     list_per_page = 50
     save_on_top = True
+
+    def get_form(self, request, obj=None, **kwargs):
+        form = super().get_form(request, obj, **kwargs)
+        for name in ("first_name",):
+            if name in form.base_fields:
+                form.base_fields[name].required = True
+        if "phone" in form.base_fields:
+            form.base_fields["phone"].required = False
+        return form
 
     list_display = (
         "email",

@@ -1,0 +1,12 @@
+.venv
+__pycache__
+*.py[cod]
+.git
+.env
+db.sqlite3
+erp-development.sqlite3
+staticfiles
+private-media
+media
+.pytest_cache
+.coverage

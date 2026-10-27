@@ -17,6 +17,7 @@ PERMISSION_CACHE_SECONDS = 30
 VIEW_IMPLYING_ACTIONS = {
     "add",
     "approve",
+    "assign",
     "cancel",
     "checkin",
     "convert",

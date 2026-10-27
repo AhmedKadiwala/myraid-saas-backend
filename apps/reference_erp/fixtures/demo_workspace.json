@@ -1,1 +1,652 @@
-{"customers": [{"id": "C-001", "name": "Prakash Pumps Ltd", "contact": "Rohit Mehta", "phone": "9876543210", "gst": "27AABCP1234K1Z5", "city": "Mumbai", "credit": 30}, {"id": "C-002", "name": "Apex Fluid Systems", "contact": "Nisha Shah", "phone": "9876543211", "gst": "27AABCA5678P1Z2", "city": "Pune", "credit": 15}, {"id": "C-003", "name": "Sterling Engineering", "contact": "Manav Jain", "phone": "9876543212", "gst": "24AABCS1144E1Z1", "city": "Ahmedabad", "credit": 45}, {"id": "C-004", "name": "Indus Process Equipments", "contact": "Vivek Rao", "phone": "9876543213", "gst": "27AABCI3456B1Z0", "city": "Thane", "credit": 30}], "leads": [{"id": "L-001", "name": "Omega Process Tech", "contact": "Aarav Singh", "requirement": "Mechanical seal overhaul", "value": 185000, "stage": "Qualified", "follow": "2026-10-11", "owner": "Priya Shah"}, {"id": "L-002", "name": "BlueWave Chemicals", "contact": "Sneha Patil", "requirement": "Cartridge seals — 24 units", "value": 320000, "stage": "New", "follow": "2026-10-13", "owner": "Priya Shah"}, {"id": "L-003", "name": "Western Industrial", "contact": "Karan Rao", "requirement": "Spares supply contract", "value": 96000, "stage": "Negotiation", "follow": "2026-10-09", "owner": "Rahul Patel"}], "items": [{"id": "SKU-001", "name": "Mechanical Seal Type 21", "sku": "MS-021", "category": "Finished product", "stock": 84, "min": 30, "unit": "Nos", "rate": 6800, "cost": 3900, "hsn": "84842000"}, {"id": "SKU-002", "name": "Carbon Seal Ring 45mm", "sku": "CR-045", "category": "Raw material", "stock": 14, "min": 25, "unit": "Nos", "rate": 1100, "cost": 630, "hsn": "68151000"}, {"id": "SKU-003", "name": "Silicon Carbide Seat", "sku": "SC-118", "category": "Raw material", "stock": 62, "min": 25, "unit": "Nos", "rate": 2400, "cost": 1350, "hsn": "84842000"}, {"id": "SKU-004", "name": "O-Ring Viton 35mm", "sku": "OR-035", "category": "Consumable", "stock": 450, "min": 100, "unit": "Nos", "rate": 90, "cost": 35, "hsn": "40169300"}, {"id": "SKU-005", "name": "Seal Gland Assembly", "sku": "GA-055", "category": "Semi-finished", "stock": 22, "min": 25, "unit": "Nos", "rate": 4200, "cost": 2300, "hsn": "84842000"}, {"id": "SKU-006", "name": "Cartridge Seal 65mm", "sku": "CS-065", "category": "Finished product", "stock": 37, "min": 15, "unit": "Nos", "rate": 12500, "cost": 7900, "hsn": "84842000"}], "suppliers": [{"id": "V-001", "name": "Precision Materials Co", "city": "Mumbai", "phone": "9820100001"}, {"id": "V-002", "name": "Kohinoor Components", "city": "Pune", "phone": "9820100002"}, {"id": "V-003", "name": "Acme Alloy Traders", "city": "Ahmedabad", "phone": "9820100003"}], "quotes": [{"id": "Q-001", "customer": "C-001", "item": "SKU-001", "qty": 12, "amount": 81600, "gst": 18, "status": "Accepted", "created": "2026-09-26"}, {"id": "Q-002", "customer": "C-002", "item": "SKU-006", "qty": 16, "amount": 200000, "gst": 18, "status": "Sent", "created": "2026-10-07"}, {"id": "Q-003", "customer": "C-003", "item": "SKU-005", "qty": 8, "amount": 33600, "gst": 5, "status": "Draft", "created": "2026-10-09"}], "orders": [{"id": "SO-001", "quote": "Q-001", "customer": "C-001", "item": "SKU-001", "qty": 12, "amount": 81600, "gst": 18, "status": "In production", "due": "2026-10-16"}, {"id": "SO-002", "quote": "", "customer": "C-002", "item": "SKU-006", "qty": 10, "amount": 125000, "gst": 18, "status": "Ready to dispatch", "due": "2026-10-13"}, {"id": "SO-003", "quote": "", "customer": "C-004", "item": "SKU-001", "qty": 6, "amount": 40800, "gst": 18, "status": "Completed", "due": "2026-10-06"}, {"id": "SO-004", "quote": "", "customer": "C-003", "item": "SKU-005", "qty": 15, "amount": 63000, "gst": 18, "status": "Confirmed", "due": "2026-10-20"}], "jobs": [{"id": "JOB-001", "order": "SO-001", "stage": "Assembly", "status": "In Progress", "progress": 68, "assignee": "Imran Shaikh", "priority": "High", "due": "2026-10-14"}, {"id": "JOB-002", "order": "SO-004", "stage": "Machining", "status": "In Progress", "progress": 35, "assignee": "Farhan Ali", "priority": "Normal", "due": "2026-10-18"}, {"id": "JOB-003", "order": "SO-003", "stage": "Quality check", "status": "Completed", "progress": 100, "assignee": "Imran Shaikh", "priority": "High", "due": "2026-10-08"}], "purchases": [{"id": "PO-001", "vendor": "V-001", "item": "SKU-002", "qty": 100, "received": 0, "unitCost": 630, "status": "Pending", "due": "2026-10-15"}, {"id": "PO-002", "vendor": "V-002", "item": "SKU-003", "qty": 80, "received": 40, "unitCost": 1350, "status": "Partial", "due": "2026-10-13"}], "dispatches": [{"id": "DC-001", "order": "SO-003", "qty": 6, "carrier": "Delhivery Logistics", "tracking": "DLH98432", "status": "Delivered", "date": "2026-10-08"}], "invoices": [{"id": "INV-001", "order": "SO-003", "customer": "C-004", "amount": 40800, "gst": 18, "date": "2026-10-07", "due": "2026-10-22"}, {"id": "INV-002", "order": "SO-002", "customer": "C-002", "amount": 125000, "gst": 18, "date": "2026-10-01", "due": "2026-10-14"}, {"id": "INV-003", "order": "", "customer": "C-001", "amount": 152000, "gst": 18, "date": "2026-09-18", "due": "2026-10-07"}], "payments": [{"id": "PAY-001", "invoice": "INV-001", "amount": 40800, "date": "2026-10-09", "mode": "UPI", "ref": "UTR683249"}, {"id": "PAY-002", "invoice": "INV-003", "amount": 60000, "date": "2026-10-01", "mode": "NEFT", "ref": "NEFT194720"}], "employees": [{"id": "EMP-001", "name": "Imran Shaikh", "department": "Production", "role": "Supervisor", "salary": 38000, "status": "Active", "phone": "9876543201"}, {"id": "EMP-002", "name": "Priya Shah", "department": "Sales", "role": "Sales executive", "salary": 42000, "status": "Active", "phone": "9876543202"}, {"id": "EMP-003", "name": "Rahul Patel", "department": "Sales", "role": "Account manager", "salary": 35000, "status": "Active", "phone": "9876543203"}, {"id": "EMP-004", "name": "Farhan Ali", "department": "Production", "role": "Machine operator", "salary": 28000, "status": "Active", "phone": "9876543204"}, {"id": "EMP-005", "name": "Neha Desai", "department": "Accounts", "role": "Accountant", "salary": 40000, "status": "Active", "phone": "9876543205"}, {"id": "EMP-006", "name": "Sneha Rao", "department": "HR", "role": "HR manager", "salary": 36000, "status": "Active", "phone": "9876543206"}], "attendance": [{"id": "AT-001", "employee": "EMP-001", "date": "2026-10-10", "status": "Present"}, {"id": "AT-002", "employee": "EMP-002", "date": "2026-10-10", "status": "Present"}, {"id": "AT-003", "employee": "EMP-003", "date": "2026-10-10", "status": "Leave"}, {"id": "AT-004", "employee": "EMP-004", "date": "2026-10-10", "status": "Present"}], "payroll": [{"id": "PR-001", "period": "Sep 2026", "amount": 219000, "status": "Finalized"}], "expenses": [{"id": "EXP-001", "name": "Factory rent", "category": "Rent", "amount": 48000, "date": "2026-10-05", "recurring": "Monthly"}, {"id": "EXP-002", "name": "Electricity bill", "category": "Utilities", "amount": 18500, "date": "2026-10-03", "recurring": "No"}, {"id": "EXP-003", "name": "Machine maintenance", "category": "Maintenance", "amount": 9200, "date": "2026-09-29", "recurring": "No"}], "approvals": [{"id": "APR-001", "title": "Purchase order PO-001", "type": "Purchase", "amount": 63000, "status": "Pending", "by": "Neha Desai"}, {"id": "APR-002", "title": "Quotation Q-002 discount", "type": "Sales", "amount": 200000, "status": "Pending", "by": "Priya Shah"}, {"id": "APR-003", "title": "Machine repair expense", "type": "Expense", "amount": 7200, "status": "Pending", "by": "Imran Shaikh"}], "tasks": [{"id": "TK-001", "title": "Follow up with Omega Process Tech", "owner": "Priya Shah", "due": "2026-10-11", "status": "Pending"}, {"id": "TK-002", "title": "Check carbon ring stock", "owner": "Imran Shaikh", "due": "2026-10-10", "status": "Pending"}], "users": [{"id": "U-001", "name": "Factory Owner", "phone": "9876500001", "role": "Owner", "status": "Active"}, {"id": "U-002", "name": "Priya Shah", "phone": "9876543202", "role": "Sales", "status": "Active"}, {"id": "U-003", "name": "Imran Shaikh", "phone": "9876543201", "role": "Production", "status": "Active"}, {"id": "U-004", "name": "Neha Desai", "phone": "9876543205", "role": "Accounts", "status": "Active"}, {"id": "U-005", "name": "Sneha Rao", "phone": "9876543206", "role": "HR", "status": "Active"}], "stockMoves": [{"id": "ST-001", "item": "SKU-002", "delta": -6, "reason": "Job material issue", "date": "2026-10-08"}, {"id": "ST-002", "item": "SKU-003", "delta": 40, "reason": "Goods receipt PO-002", "date": "2026-10-09"}], "audit": [{"text": "Quotation Q-001 converted to sales order", "at": "2 hours ago"}, {"text": "Stock alert: Carbon Seal Ring 45mm", "at": "4 hours ago"}, {"text": "Invoice INV-003 marked partially paid", "at": "Yesterday"}], "company": {"name": "Meridian Seals & Engineering", "industry": "Mechanical seals & industrial components", "location": "Mumbai, Maharashtra", "gst": "27AAACM1234C1Z5", "branch": "Mumbai Factory"}, "toggles": {}, "version": 2, "payouts": []}
+{
+  "customers": [
+    {
+      "id": "C-001",
+      "name": "Prakash Pumps Ltd",
+      "contact": "Rohit Mehta",
+      "phone": "9876543210",
+      "gst": "27AABCP1234K1Z5",
+      "city": "Mumbai",
+      "credit": 30
+    },
+    {
+      "id": "C-002",
+      "name": "Apex Fluid Systems",
+      "contact": "Nisha Shah",
+      "phone": "9876543211",
+      "gst": "27AABCA5678P1Z2",
+      "city": "Pune",
+      "credit": 15
+    },
+    {
+      "id": "C-003",
+      "name": "Sterling Engineering",
+      "contact": "Manav Jain",
+      "phone": "9876543212",
+      "gst": "24AABCS1144E1Z1",
+      "city": "Ahmedabad",
+      "credit": 45
+    },
+    {
+      "id": "C-004",
+      "name": "Indus Process Equipments",
+      "contact": "Vivek Rao",
+      "phone": "9876543213",
+      "gst": "27AABCI3456B1Z0",
+      "city": "Thane",
+      "credit": 30
+    }
+  ],
+  "leads": [
+    {
+      "id": "L-001",
+      "name": "Omega Process Tech",
+      "contact": "Aarav Singh",
+      "requirement": "Mechanical seal overhaul",
+      "value": 185000,
+      "stage": "Qualified",
+      "follow": "2026-10-11",
+      "owner": "Priya Shah"
+    },
+    {
+      "id": "L-002",
+      "name": "BlueWave Chemicals",
+      "contact": "Sneha Patil",
+      "requirement": "Cartridge seals \u2014 24 units",
+      "value": 320000,
+      "stage": "New",
+      "follow": "2026-10-13",
+      "owner": "Priya Shah"
+    },
+    {
+      "id": "L-003",
+      "name": "Western Industrial",
+      "contact": "Karan Rao",
+      "requirement": "Spares supply contract",
+      "value": 96000,
+      "stage": "Negotiation",
+      "follow": "2026-10-09",
+      "owner": "Rahul Patel"
+    }
+  ],
+  "items": [
+    {
+      "id": "SKU-001",
+      "name": "Mechanical Seal Type 21",
+      "sku": "MS-021",
+      "category": "Finished product",
+      "stock": 84,
+      "min": 30,
+      "unit": "Nos",
+      "rate": 6800,
+      "cost": 3900,
+      "hsn": "84842000"
+    },
+    {
+      "id": "SKU-002",
+      "name": "Carbon Seal Ring 45mm",
+      "sku": "CR-045",
+      "category": "Raw material",
+      "stock": 14,
+      "min": 25,
+      "unit": "Nos",
+      "rate": 1100,
+      "cost": 630,
+      "hsn": "68151000"
+    },
+    {
+      "id": "SKU-003",
+      "name": "Silicon Carbide Seat",
+      "sku": "SC-118",
+      "category": "Raw material",
+      "stock": 62,
+      "min": 25,
+      "unit": "Nos",
+      "rate": 2400,
+      "cost": 1350,
+      "hsn": "84842000"
+    },
+    {
+      "id": "SKU-004",
+      "name": "O-Ring Viton 35mm",
+      "sku": "OR-035",
+      "category": "Consumable",
+      "stock": 450,
+      "min": 100,
+      "unit": "Nos",
+      "rate": 90,
+      "cost": 35,
+      "hsn": "40169300"
+    },
+    {
+      "id": "SKU-005",
+      "name": "Seal Gland Assembly",
+      "sku": "GA-055",
+      "category": "Semi-finished",
+      "stock": 22,
+      "min": 25,
+      "unit": "Nos",
+      "rate": 4200,
+      "cost": 2300,
+      "hsn": "84842000"
+    },
+    {
+      "id": "SKU-006",
+      "name": "Cartridge Seal 65mm",
+      "sku": "CS-065",
+      "category": "Finished product",
+      "stock": 37,
+      "min": 15,
+      "unit": "Nos",
+      "rate": 12500,
+      "cost": 7900,
+      "hsn": "84842000"
+    }
+  ],
+  "suppliers": [
+    {
+      "id": "V-001",
+      "name": "Precision Materials Co",
+      "city": "Mumbai",
+      "phone": "9820100001"
+    },
+    {
+      "id": "V-002",
+      "name": "Kohinoor Components",
+      "city": "Pune",
+      "phone": "9820100002"
+    },
+    {
+      "id": "V-003",
+      "name": "Acme Alloy Traders",
+      "city": "Ahmedabad",
+      "phone": "9820100003"
+    }
+  ],
+  "quotes": [
+    {
+      "id": "Q-001",
+      "customer": "C-001",
+      "item": "SKU-001",
+      "qty": 12,
+      "amount": 81600,
+      "gst": 18,
+      "status": "Accepted",
+      "created": "2026-09-26"
+    },
+    {
+      "id": "Q-002",
+      "customer": "C-002",
+      "item": "SKU-006",
+      "qty": 16,
+      "amount": 200000,
+      "gst": 18,
+      "status": "Sent",
+      "created": "2026-10-07"
+    },
+    {
+      "id": "Q-003",
+      "customer": "C-003",
+      "item": "SKU-005",
+      "qty": 8,
+      "amount": 33600,
+      "gst": 5,
+      "status": "Draft",
+      "created": "2026-10-09"
+    }
+  ],
+  "orders": [
+    {
+      "id": "SO-001",
+      "quote": "Q-001",
+      "customer": "C-001",
+      "item": "SKU-001",
+      "qty": 12,
+      "amount": 81600,
+      "gst": 18,
+      "status": "In production",
+      "due": "2026-10-16"
+    },
+    {
+      "id": "SO-002",
+      "quote": "",
+      "customer": "C-002",
+      "item": "SKU-006",
+      "qty": 10,
+      "amount": 125000,
+      "gst": 18,
+      "status": "Ready to dispatch",
+      "due": "2026-10-13"
+    },
+    {
+      "id": "SO-003",
+      "quote": "",
+      "customer": "C-004",
+      "item": "SKU-001",
+      "qty": 6,
+      "amount": 40800,
+      "gst": 18,
+      "status": "Completed",
+      "due": "2026-10-06"
+    },
+    {
+      "id": "SO-004",
+      "quote": "",
+      "customer": "C-003",
+      "item": "SKU-005",
+      "qty": 15,
+      "amount": 63000,
+      "gst": 18,
+      "status": "Confirmed",
+      "due": "2026-10-20"
+    }
+  ],
+  "jobs": [
+    {
+      "id": "JOB-001",
+      "order": "SO-001",
+      "stage": "Assembly",
+      "status": "In Progress",
+      "progress": 68,
+      "assignee": "Imran Shaikh",
+      "priority": "High",
+      "due": "2026-10-14"
+    },
+    {
+      "id": "JOB-002",
+      "order": "SO-004",
+      "stage": "Machining",
+      "status": "In Progress",
+      "progress": 35,
+      "assignee": "Farhan Ali",
+      "priority": "Normal",
+      "due": "2026-10-18"
+    },
+    {
+      "id": "JOB-003",
+      "order": "SO-003",
+      "stage": "Quality check",
+      "status": "Completed",
+      "progress": 100,
+      "assignee": "Imran Shaikh",
+      "priority": "High",
+      "due": "2026-10-08"
+    }
+  ],
+  "purchases": [
+    {
+      "id": "PO-001",
+      "vendor": "V-001",
+      "item": "SKU-002",
+      "qty": 100,
+      "received": 0,
+      "unitCost": 630,
+      "status": "Pending",
+      "due": "2026-10-15"
+    },
+    {
+      "id": "PO-002",
+      "vendor": "V-002",
+      "item": "SKU-003",
+      "qty": 80,
+      "received": 40,
+      "unitCost": 1350,
+      "status": "Partial",
+      "due": "2026-10-13"
+    }
+  ],
+  "dispatches": [
+    {
+      "id": "DC-001",
+      "order": "SO-003",
+      "qty": 6,
+      "carrier": "Delhivery Logistics",
+      "tracking": "DLH98432",
+      "status": "Delivered",
+      "date": "2026-10-08"
+    }
+  ],
+  "invoices": [
+    {
+      "id": "INV-001",
+      "order": "SO-003",
+      "customer": "C-004",
+      "amount": 40800,
+      "gst": 18,
+      "date": "2026-10-07",
+      "due": "2026-10-22"
+    },
+    {
+      "id": "INV-002",
+      "order": "SO-002",
+      "customer": "C-002",
+      "amount": 125000,
+      "gst": 18,
+      "date": "2026-10-01",
+      "due": "2026-10-14"
+    },
+    {
+      "id": "INV-003",
+      "order": "",
+      "customer": "C-001",
+      "amount": 152000,
+      "gst": 18,
+      "date": "2026-09-18",
+      "due": "2026-10-07"
+    }
+  ],
+  "payments": [
+    {
+      "id": "PAY-001",
+      "invoice": "INV-001",
+      "amount": 40800,
+      "date": "2026-10-09",
+      "mode": "UPI",
+      "ref": "UTR683249"
+    },
+    {
+      "id": "PAY-002",
+      "invoice": "INV-003",
+      "amount": 60000,
+      "date": "2026-10-01",
+      "mode": "NEFT",
+      "ref": "NEFT194720"
+    }
+  ],
+  "employees": [
+    {
+      "id": "EMP-001",
+      "name": "Imran Shaikh",
+      "department": "Production",
+      "role": "Supervisor",
+      "salary": 38000,
+      "status": "Active",
+      "phone": "9876543201"
+    },
+    {
+      "id": "EMP-002",
+      "name": "Priya Shah",
+      "department": "Sales",
+      "role": "Sales executive",
+      "salary": 42000,
+      "status": "Active",
+      "phone": "9876543202"
+    },
+    {
+      "id": "EMP-003",
+      "name": "Rahul Patel",
+      "department": "Sales",
+      "role": "Account manager",
+      "salary": 35000,
+      "status": "Active",
+      "phone": "9876543203"
+    },
+    {
+      "id": "EMP-004",
+      "name": "Farhan Ali",
+      "department": "Production",
+      "role": "Machine operator",
+      "salary": 28000,
+      "status": "Active",
+      "phone": "9876543204"
+    },
+    {
+      "id": "EMP-005",
+      "name": "Neha Desai",
+      "department": "Accounts",
+      "role": "Accountant",
+      "salary": 40000,
+      "status": "Active",
+      "phone": "9876543205"
+    },
+    {
+      "id": "EMP-006",
+      "name": "Sneha Rao",
+      "department": "HR",
+      "role": "HR manager",
+      "salary": 36000,
+      "status": "Active",
+      "phone": "9876543206"
+    }
+  ],
+  "attendance": [
+    {
+      "id": "AT-001",
+      "employee": "EMP-001",
+      "date": "2026-10-10",
+      "status": "Present"
+    },
+    {
+      "id": "AT-002",
+      "employee": "EMP-002",
+      "date": "2026-10-10",
+      "status": "Present"
+    },
+    {
+      "id": "AT-003",
+      "employee": "EMP-003",
+      "date": "2026-10-10",
+      "status": "Leave"
+    },
+    {
+      "id": "AT-004",
+      "employee": "EMP-004",
+      "date": "2026-10-10",
+      "status": "Present"
+    }
+  ],
+  "payroll": [
+    {
+      "id": "PR-001",
+      "period": "Sep 2026",
+      "amount": 219000,
+      "status": "Finalized"
+    }
+  ],
+  "expenses": [
+    {
+      "id": "EXP-001",
+      "name": "Factory rent",
+      "category": "Rent",
+      "amount": 48000,
+      "date": "2026-10-05",
+      "recurring": "Monthly"
+    },
+    {
+      "id": "EXP-002",
+      "name": "Electricity bill",
+      "category": "Utilities",
+      "amount": 18500,
+      "date": "2026-10-03",
+      "recurring": "No"
+    },
+    {
+      "id": "EXP-003",
+      "name": "Machine maintenance",
+      "category": "Maintenance",
+      "amount": 9200,
+      "date": "2026-09-29",
+      "recurring": "No"
+    }
+  ],
+  "approvals": [
+    {
+      "id": "APR-001",
+      "title": "Purchase order PO-001",
+      "type": "Purchase",
+      "amount": 63000,
+      "status": "Pending",
+      "by": "Neha Desai"
+    },
+    {
+      "id": "APR-002",
+      "title": "Quotation Q-002 discount",
+      "type": "Sales",
+      "amount": 200000,
+      "status": "Pending",
+      "by": "Priya Shah"
+    },
+    {
+      "id": "APR-003",
+      "title": "Machine repair expense",
+      "type": "Expense",
+      "amount": 7200,
+      "status": "Pending",
+      "by": "Imran Shaikh"
+    }
+  ],
+  "tasks": [
+    {
+      "id": "TK-001",
+      "title": "Follow up with Omega Process Tech",
+      "owner": "Priya Shah",
+      "due": "2026-10-11",
+      "status": "Pending"
+    },
+    {
+      "id": "TK-002",
+      "title": "Check carbon ring stock",
+      "owner": "Imran Shaikh",
+      "due": "2026-10-10",
+      "status": "Pending"
+    }
+  ],
+  "users": [
+    {
+      "id": "U-001",
+      "name": "Factory Owner",
+      "phone": "9876500001",
+      "role": "Owner",
+      "status": "Active"
+    },
+    {
+      "id": "U-002",
+      "name": "Priya Shah",
+      "phone": "9876543202",
+      "role": "Sales",
+      "status": "Active"
+    },
+    {
+      "id": "U-003",
+      "name": "Imran Shaikh",
+      "phone": "9876543201",
+      "role": "Production",
+      "status": "Active"
+    },
+    {
+      "id": "U-004",
+      "name": "Neha Desai",
+      "phone": "9876543205",
+      "role": "Accounts",
+      "status": "Active"
+    },
+    {
+      "id": "U-005",
+      "name": "Sneha Rao",
+      "phone": "9876543206",
+      "role": "HR",
+      "status": "Active"
+    }
+  ],
+  "stockMoves": [
+    {
+      "id": "ST-001",
+      "item": "SKU-002",
+      "delta": -6,
+      "reason": "Job material issue",
+      "date": "2026-10-08"
+    },
+    {
+      "id": "ST-002",
+      "item": "SKU-003",
+      "delta": 40,
+      "reason": "Goods receipt PO-002",
+      "date": "2026-10-09"
+    }
+  ],
+  "audit": [
+    {
+      "text": "Quotation Q-001 converted to sales order",
+      "at": "2 hours ago"
+    },
+    {
+      "text": "Stock alert: Carbon Seal Ring 45mm",
+      "at": "4 hours ago"
+    },
+    {
+      "text": "Invoice INV-003 marked partially paid",
+      "at": "Yesterday"
+    }
+  ],
+  "company": {
+    "name": "Meridian Seals & Engineering",
+    "industry": "Mechanical seals & industrial components",
+    "location": "Mumbai, Maharashtra",
+    "gst": "27AAACM1234C1Z5",
+    "branch": "Mumbai Factory"
+  },
+  "toggles": {},
+  "version": 2,
+  "payouts": [],
+  "boms": [
+    {
+      "id": "BOM-001",
+      "item": "SKU-001",
+      "name": "BOM for Mechanical Seal Type 21",
+      "qty": 1,
+      "components": [
+        {
+          "item": "SKU-002",
+          "item_name": "Carbon Seal Ring 45mm",
+          "qty": 1.0,
+          "unit": "Nos",
+          "scrap_percent": 0.0,
+          "unit_cost": 630.0,
+          "total_cost": 630.0
+        },
+        {
+          "item": "SKU-003",
+          "item_name": "Silicon Carbide Seat",
+          "qty": 1.0,
+          "unit": "Nos",
+          "scrap_percent": 0.0,
+          "unit_cost": 1350.0,
+          "total_cost": 1350.0
+        }
+      ],
+      "operations": [
+        {
+          "stage": "Assembly",
+          "workstation": "Assembly Station 1",
+          "hours": 1.5,
+          "hourly_rate": 200.0,
+          "cost": 300.0
+        }
+      ],
+      "material_cost": 1980.0,
+      "operation_cost": 300.0,
+      "total_cost": 2280.0,
+      "is_active": true
+    }
+  ],
+  "qcInspections": [
+    {
+      "id": "QC-001",
+      "target_type": "job",
+      "target_id": "JOB-001",
+      "item": "SKU-001",
+      "inspected_qty": 5,
+      "accepted_qty": 5,
+      "rejected_qty": 0,
+      "status": "Passed",
+      "parameters": [
+        "Dimensions",
+        "Tolerance",
+        "Surface finish"
+      ],
+      "inspector": "Quality Lead Verma",
+      "remarks": "All dimensions within 0.02mm tolerance",
+      "date": "2026-10-14"
+    }
+  ]
+}

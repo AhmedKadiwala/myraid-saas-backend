@@ -33,7 +33,7 @@ class FullTrialWorkflowTests(TestCase):
         self.assertEqual(set(Entitlement.objects.filter(tenant=self.tenant,enabled=True).values_list('feature',flat=True)),set(FEATURES)-{'gst_integrations'})
         self.assertGreater(self.tenant.trial_ends_at,timezone.now()+timedelta(days=6,hours=23))
         workspace=self.api.get(BASE+'workspace/');self.assertEqual(workspace.status_code,200,workspace.data)
-        self.assertEqual(set(workspace.data['user']['modules']),{'dashboard','sales','jobs','purchase','inventory','dispatch','finance','employees','approvals','reports','settings'})
+        self.assertEqual(set(workspace.data['user']['modules']),{'dashboard','sales','jobs','purchase','dispatch','finance','employees','approvals','reports','settings'})
         customer=self.command('customer',{'name':'Buyer','phone':'9876501102'})
         item=self.command('item',{'name':'Product','sku':'SKU-QA','category':'Finished','unit':'pcs','rate':100000,'cost':3000,'stock':10,'min':1,'hsn':'1234'})
         supplier=self.command('supplier',{'name':'Supplier','phone':'9876501103'})
@@ -41,8 +41,8 @@ class FullTrialWorkflowTests(TestCase):
         self.command('receive',{'qty':2},purchase['id'])
         quote=self.command('quote',{'customer':customer['id'],'item':item['id'],'qty':2,'amount':200000,'gst':5})
         order=self.command('quote-convert',code=quote['id'],kind='action')
-        job=self.command('job',{'order':order['id'],'stage':'Assembly','priority':'High','assignee':'Operator','due':'2026-10-20'})
-        self.command('job-update',{'stage':'Packing','status':'Completed','progress':100,'assignee':'Operator'},job['id'])
+        job={'id':ERPRecord.objects.get(tenant=self.tenant,collection='jobs',payload__order=order['id']).code}
+        self.command('job-update',{'stage':'Packing','status':'Completed','progress':100},job['id'])
         dispatch=self.command('dispatch',{'order':order['id'],'qty':2,'carrier':'Local','tracking':'QA','status':'Dispatched'})
         invoice=self.command('invoice',{'order':order['id'],'date':'2026-10-13','due':'2026-10-20','gst':5})
         saved=ERPRecord.objects.get(tenant=self.tenant,collection='invoices',code=invoice['id']).payload
@@ -99,7 +99,7 @@ class FullTrialWorkflowTests(TestCase):
         self.assertEqual(self.api.get(BASE+'billing/').status_code,403)
 
     def test_accounts_invoice_reader_does_not_receive_cost_snapshot_or_salary_totals(self):
-        customer=self.command('customer',{'name':'Buyer'})
+        customer=self.command('customer',{'name':'Buyer','phone':'9876501102'})
         item=self.command('item',{'name':'Item','sku':'PRIVATE-COST','rate':100,'cost':45})
         order=self.command('order',{'customer':customer['id'],'item':item['id'],'qty':1,'amount':100,'gst':5,'due':'2026-10-20'})
         self.command('invoice',{'order':order['id'],'date':'2026-10-13','due':'2026-10-20'})

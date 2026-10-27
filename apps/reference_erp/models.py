@@ -5,6 +5,38 @@ from django.core.validators import MinValueValidator
 from decimal import Decimal
 
 
+class CompanyInvitation(models.Model):
+    tenant = models.ForeignKey("core.Tenant", on_delete=models.CASCADE)
+    phone = models.CharField(max_length=16, blank=True, default="")
+    username = models.CharField(max_length=40, blank=True, default="")
+    email = models.EmailField(blank=True, default="")
+    name = models.CharField(max_length=200, blank=True)
+    role = models.ForeignKey("core.Role", on_delete=models.PROTECT)
+    invited_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT)
+    token_hash = models.CharField(max_length=64, unique=True)
+    status = models.CharField(max_length=12, default="pending", choices=[(s, s.title()) for s in ("pending", "accepted", "revoked")])
+    expires_at = models.DateTimeField()
+    accepted_at = models.DateTimeField(null=True, blank=True)
+    communication = models.ForeignKey("erp.Communication", null=True, blank=True, on_delete=models.SET_NULL)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"{self.name or self.phone} · {self.tenant.name} · {self.role.name}"
+
+
+class OrderAttachment(models.Model):
+    tenant = models.ForeignKey("core.Tenant", on_delete=models.CASCADE)
+    order_code = models.CharField(max_length=80)
+    name = models.CharField(max_length=200)
+    object_key = models.CharField(max_length=200)
+    size = models.PositiveIntegerField()
+    uploaded_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"{self.order_code} · {self.name} · {self.tenant.name}"
+
+
 class WorkspaceSettings(models.Model):
     tenant = models.OneToOneField("core.Tenant", on_delete=models.CASCADE)
     company_meta = models.JSONField(default=dict)
@@ -76,3 +108,25 @@ class TenantPayment(models.Model):
     class Meta:
         constraints = [models.CheckConstraint(condition=models.Q(amount__gt=0), name="platform_payment_positive"),
                        models.UniqueConstraint(fields=["reference"], condition=~models.Q(reference=""), name="platform_unique_payment_reference")]
+
+
+class GeneratedDocument(models.Model):
+    tenant = models.ForeignKey("core.Tenant", on_delete=models.CASCADE)
+    document_type = models.CharField(max_length=50)
+    document_code = models.CharField(max_length=80)
+    filename = models.CharField(max_length=255)
+    object_key = models.CharField(max_length=350)
+    size = models.PositiveIntegerField(default=0)
+    content_type = models.CharField(max_length=100, default="application/pdf")
+    created_at = models.DateTimeField(auto_now_add=True)
+    expires_at = models.DateTimeField()
+    is_deleted = models.BooleanField(default=False)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=["tenant", "document_type", "document_code"]),
+            models.Index(fields=["expires_at", "is_deleted"]),
+        ]
+
+    def __str__(self):
+        return f"{self.document_type}:{self.document_code} · {self.tenant.name} · {self.filename}"

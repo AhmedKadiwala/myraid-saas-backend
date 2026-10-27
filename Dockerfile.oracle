@@ -1,0 +1,22 @@
+FROM python:3.13-slim
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
+
+WORKDIR /app
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends curl \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY . .
+RUN DJANGO_DEBUG=0 python manage.py collectstatic --noinput \
+    && useradd --system --uid 10001 --create-home appuser \
+    && mkdir -p /app/private-media \
+    && chown -R 10001:10001 /app
+
+USER 10001:10001
+EXPOSE 8000

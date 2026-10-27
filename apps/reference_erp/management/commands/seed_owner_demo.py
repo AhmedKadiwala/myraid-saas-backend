@@ -75,7 +75,7 @@ class Command(BaseCommand):
         WorkspaceSettings.objects.create(tenant=tenant, initialized=True,
             company_meta={**sample["company"], "name": tenant.name}, import_report={"seed": "owner-demo-v1"})
         records = [ERPRecord(tenant=tenant, collection=collection, code=row["id"], payload=row)
-                   for collection in COLLECTIONS if collection != "users" for row in sample[collection]]
+                   for collection in COLLECTIONS if collection != "users" for row in sample.get(collection, [])]
         ERPRecord.objects.bulk_create(records)
         AuditEvent.objects.create(tenant=tenant, user=user, message="Fictional demo records added for module testing.")
         self.stdout.write(self.style.SUCCESS(f"Demo ready: phone={phone}, company={tenant.name}, "

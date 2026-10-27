@@ -12,9 +12,10 @@ class UserManager(BaseUserManager):
 
     def _create_user(self, email, password, **extra_fields):
         if not email:
-            raise ValueError("Email is required")
+            raise ValueError("A unique account email is required")
         email = self.normalize_email(email)
-        user = self.model(email=email, username=email, **extra_fields)
+        username = extra_fields.pop("username", email)
+        user = self.model(email=email, username=username, **extra_fields)
         user.set_password(password)
         user.save(using=self._db)
         return user
@@ -45,6 +46,9 @@ class UserManager(BaseUserManager):
 
 
 class User(AbstractUser):
+    def __str__(self):
+        return f"{self.get_full_name() or self.email} · {self.phone}"
+
     class Department(models.TextChoices):
         SALES = "sales", "Sales"
         ADMIN = "admin", "Admin"
@@ -52,24 +56,30 @@ class User(AbstractUser):
         DRAWING = "drawing", "Drawing"
         ACCOUNTS = "accounts", "Accounts"
 
-    username = models.CharField(max_length=254, blank=True)
+    username = models.CharField(max_length=254, unique=True)
     email = models.EmailField(unique=True)
-    phone = models.CharField(max_length=15, unique=True)
+    phone = models.CharField(max_length=15, null=True, blank=True, unique=True)
     phone_e164 = models.CharField(max_length=16, unique=True, null=True, blank=True)
     quotation_code = models.CharField(max_length=30, blank=True, null=True)
     department = models.CharField(
         max_length=20, choices=Department.choices, default=Department.SALES
     )
     platform_admin = models.BooleanField(default=False)
+    platform_sales_rep = models.BooleanField(default=False)
     phone_verified_at = models.DateTimeField(null=True, blank=True)
+
+    @property
+    def is_sales_rep(self):
+        return self.platform_sales_rep or self.department == self.Department.SALES or self.platform_admin or self.is_superuser
 
     USERNAME_FIELD = "email"
     REQUIRED_FIELDS = ["phone"]
     objects = UserManager()
 
     def save(self, *args, **kwargs):
-        self.username = self.email
-        digits = "".join(ch for ch in self.phone if ch.isdigit())
+        if not self.username:
+            self.username = self.email
+        digits = "".join(ch for ch in (self.phone or "") if ch.isdigit())
         if self.phone.startswith("+") and 8 <= len(digits) <= 15:
             self.phone_e164 = "+" + digits
         elif len(digits) == 10:
@@ -108,6 +118,14 @@ class Tenant(TimeStampedModel):
         CANCELLED = "cancelled", "Cancelled"
 
     name = models.CharField(max_length=200)
+    owner = models.ForeignKey(User, null=True, blank=True, on_delete=models.PROTECT, related_name="owned_companies")
+    sales_rep = models.ForeignKey(
+        User, null=True, blank=True, on_delete=models.SET_NULL, related_name="assigned_tenants"
+    )
+
+    def __str__(self):
+        return self.name
+
     slug = models.SlugField(unique=True)
     status = models.CharField(max_length=20, choices=Status.choices, default=Status.TRIAL)
     plan = models.ForeignKey(
@@ -123,6 +141,22 @@ class Tenant(TimeStampedModel):
         null=True, blank=True, validators=[MinValueValidator(0)],
         help_text="Company-specific monthly price agreed with the customer. Leave blank until a quote is accepted.",
     )
+
+    @property
+    def billable_users_count(self):
+        return self.memberships.filter(is_active=True).count()
+
+    def calculate_monthly_price(self):
+        if self.agreed_monthly_price is not None:
+            return self.agreed_monthly_price
+        from decimal import Decimal
+        plan_code = (self.plan.code if self.plan else "basic").lower()
+        rate = Decimal("250.00")
+        if plan_code in ("advanced", "recommended"):
+            rate = Decimal("300.00")
+        elif plan_code in ("premium", "full"):
+            rate = Decimal("350.00")
+        return rate * max(1, self.billable_users_count)
 
     class Meta:
         constraints = [models.CheckConstraint(
@@ -163,6 +197,14 @@ class TenantMembership(TimeStampedModel):
         Branch, null=True, blank=True, on_delete=models.SET_NULL
     )
 
+    def save(self, *args, **kwargs):
+        super().save(*args, **kwargs)
+        if self.is_tenant_admin:
+            Tenant.objects.filter(pk=self.tenant_id, owner__isnull=True).update(owner_id=self.user_id)
+
+    def __str__(self):
+        return f"{self.user} · {self.tenant}"
+
     class Meta:
         constraints = [
             models.UniqueConstraint(fields=["tenant", "user"], name="unique_tenant_member")
@@ -181,6 +223,9 @@ class TenantScopedModel(TimeStampedModel):
 
 
 class BusinessPermission(TimeStampedModel):
+    def __str__(self):
+        return f"{self.name} ({self.code})"
+
     code = models.SlugField(max_length=100, unique=True)
     name = models.CharField(max_length=160)
     description = models.TextField(blank=True)
@@ -189,6 +234,9 @@ class BusinessPermission(TimeStampedModel):
 
 
 class Role(TimeStampedModel):
+    def __str__(self):
+        return f"{self.name} · {self.tenant.name if self.tenant_id else 'Global role'}"
+
     tenant = models.ForeignKey(
         Tenant, null=True, blank=True, related_name="roles", on_delete=models.CASCADE
     )
@@ -217,6 +265,9 @@ class Role(TimeStampedModel):
 
 
 class RolePermission(TimeStampedModel):
+    def __str__(self):
+        return f"{self.role} → {self.permission.name}"
+
     role = models.ForeignKey(Role, related_name="permission_links", on_delete=models.CASCADE)
     permission = models.ForeignKey(
         BusinessPermission, related_name="role_links", on_delete=models.CASCADE
@@ -231,6 +282,9 @@ class RolePermission(TimeStampedModel):
 
 
 class UserRole(TimeStampedModel):
+    def __str__(self):
+        return f"{self.user} · {self.role.name} · {self.tenant}"
+
     tenant = models.ForeignKey(Tenant, related_name="user_roles", on_delete=models.CASCADE)
     user = models.ForeignKey(User, related_name="role_assignments", on_delete=models.CASCADE)
     role = models.ForeignKey(Role, related_name="user_assignments", on_delete=models.CASCADE)

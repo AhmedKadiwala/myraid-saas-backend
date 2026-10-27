@@ -3,6 +3,7 @@ from datetime import datetime, timedelta
 from uuid import uuid4
 
 import boto3
+from botocore.config import Config
 from django.conf import settings
 from django.db import transaction
 from django.db.models import Count, Q, Sum
@@ -1119,7 +1120,8 @@ def s3_client(public=False):
         ),
         aws_access_key_id=settings.AWS_ACCESS_KEY_ID,
         aws_secret_access_key=settings.AWS_SECRET_ACCESS_KEY,
-        region_name="auto",
+        region_name=settings.AWS_S3_REGION_NAME,
+        config=Config(signature_version="s3v4", s3={"addressing_style": "path"}),
     )
 
 

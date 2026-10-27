@@ -84,11 +84,20 @@ ERP_LIST_DISPLAY = {
     "WebhookDelivery": ("tenant", "endpoint", "event", "status", "attempts", "next_attempt_at", "response_code", "created_at"),
     "Communication": ("tenant", "channel", "recipient", "subject", "document", "status", "provider_id", "sent_at", "created_at"),
     "ScheduledExecution": ("tenant", "configuration", "occurrence", "status", "attachment", "created_at", "updated_at"),
-    "LoginOTP": ("user", "otp_code", "expires_at", "attempts", "consumed_at", "created_at"),
+    "LoginOTP": ("user", "otp_phone", "otp_status", "expires_at", "attempts", "consumed_at", "created_at"),
 }
 
 
 class SmartErpAdmin(admin.ModelAdmin):
+    @admin.display(description="Phone number")
+    def otp_phone(self, obj):
+        return obj.phone or obj.user.phone_e164 or obj.user.phone
+
+    @admin.display(description="OTP status")
+    def otp_status(self, obj):
+        from django.utils import timezone
+        return "Used" if obj.consumed_at else "Expired" if obj.expires_at <= timezone.now() else "Pending"
+
     """Shared admin behavior for all ERP models."""
 
     list_per_page = 50

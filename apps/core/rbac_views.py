@@ -11,6 +11,7 @@ from .models import (
     Role,
     RolePermission,
     TenantMembership,
+    Tenant,
     UserRole,
 )
 from .serializers import (
@@ -119,6 +120,8 @@ class UserRoleListCreateView(APIView):
     def post(self, request):
         tenant = enforce_tenant_admin(request)
         user_id = request.data.get("user")
+        if str(user_id) == str(tenant.owner_id):
+            return Response({"message": "The company owner's access is protected."}, status=400)
         if not TenantMembership.objects.filter(
             tenant=tenant, user_id=user_id, is_active=True
         ).exists():
@@ -129,6 +132,8 @@ class UserRoleListCreateView(APIView):
         ).first()
         if not role:
             return Response({"message": "Role is not assignable in this tenant"}, status=400)
+        if role.code in ("tenant-admin", "workspace-owner"):
+            return Response({"message": "Ownership cannot be assigned as a staff role."}, status=400)
         if request.data.get("branch"):
             return Response({"message":"Roles are assigned per company, not branch."},status=400)
         branch = None
@@ -137,6 +142,9 @@ class UserRoleListCreateView(APIView):
             UserRole.objects.filter(tenant=tenant,user_id=user_id,is_active=True).update(is_active=False)
             assignment = UserRole(tenant=tenant,user_id=user_id,role=role,branch=branch,assigned_by=request.user,is_active=True)
             assignment.full_clean();assignment.save()
+            membership = TenantMembership.objects.get(tenant=tenant, user_id=user_id)
+            membership.is_tenant_admin = role.code == "global-co-owner"
+            membership.save(update_fields=["is_tenant_admin", "updated_at"])
         audit(
             actor=request.user, tenant=tenant, action="user_role.assigned",
             resource=assignment, after=UserRoleSerializer(assignment).data,
@@ -151,6 +159,8 @@ class UserRoleDetailView(APIView):
         assignment = UserRole.objects.filter(pk=assignment_id, tenant=tenant).first()
         if not assignment:
             return Response({"message": "Assignment not found"}, status=404)
+        if assignment.user_id == tenant.owner_id:
+            return Response({"message": "The company owner's access is protected."}, status=400)
         before = UserRoleSerializer(assignment).data
         audit(
             actor=request.user, tenant=tenant, action="user_role.revoked",
@@ -158,6 +168,9 @@ class UserRoleDetailView(APIView):
         )
         assignment.is_active=False
         assignment.save(update_fields=["is_active","updated_at"])
+        membership = TenantMembership.objects.get(tenant=tenant, user_id=assignment.user_id)
+        membership.is_tenant_admin = False
+        membership.save(update_fields=["is_tenant_admin", "updated_at"])
         return Response(status=204)
 
 

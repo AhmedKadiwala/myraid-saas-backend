@@ -380,6 +380,11 @@ DEFAULT_FROM_EMAIL = os.getenv(
     "noreply@myraid.local",
 )
 
+EMAIL_HOST_USER = os.getenv("EMAIL_HOST_USER", "")
+EMAIL_HOST_PASSWORD = os.getenv("EMAIL_HOST_PASSWORD", "")
+EMAIL_USE_TLS = os.getenv("EMAIL_USE_TLS", "0" if DEBUG else "1") == "1"
+EMAIL_USE_SSL = os.getenv("EMAIL_USE_SSL", "0") == "1"
+
 
 # -------------------------------------------------------------------
 # ERP SETTINGS
@@ -388,15 +393,6 @@ DEFAULT_FROM_EMAIL = os.getenv(
 ERP_EMAIL_ENABLED = (
     os.getenv(
         "ERP_EMAIL_ENABLED",
-        "0",
-    )
-    == "1"
-)
-
-
-ERP_ALLOW_PASSWORD_LOGIN = (
-    os.getenv(
-        "ERP_ALLOW_PASSWORD_LOGIN",
         "0",
     )
     == "1"
@@ -420,7 +416,13 @@ ERP_DEV_FIXED_OTP = (
 #
 # No phone numbers or OTP values are hardcoded. Mock mode works for any
 # active user present in the database.
-ERP_TRIAL_DAYS = 7
+ERP_TRIAL_DAYS = int(os.getenv("ERP_TRIAL_DAYS", "14"))
+ERP_MAX_TRIAL_EXTENSION_DAYS = 30
+ERP_PLAN_PER_USER_RATES = {
+    "basic": 250,
+    "advanced": 300,
+    "premium": 350,
+}
 
 ERP_OTP_MODE = os.getenv(
     "ERP_OTP_MODE",
@@ -498,6 +500,10 @@ STORAGE_BACKEND = os.getenv(
     "local",
 )
 
+# Public origin used in company invitation links; the existing communications
+# outbox sends WhatsApp invitations through the configured provider.
+ERP_PUBLIC_APP_URL = os.getenv("ERP_PUBLIC_APP_URL", "http://localhost:5173")
+
 
 AWS_ACCESS_KEY_ID = os.getenv(
     "AWS_ACCESS_KEY_ID",
@@ -527,6 +533,8 @@ AWS_S3_PUBLIC_ENDPOINT_URL = os.getenv(
     "AWS_S3_PUBLIC_ENDPOINT_URL",
     AWS_S3_ENDPOINT_URL,
 )
+
+AWS_S3_REGION_NAME = os.getenv("AWS_S3_REGION_NAME", "auto")
 
 
 # -------------------------------------------------------------------
