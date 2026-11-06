@@ -1,0 +1,1 @@
+"""Industrial ERP Core package."""

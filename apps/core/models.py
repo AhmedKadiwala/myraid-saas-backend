@@ -47,7 +47,7 @@ class UserManager(BaseUserManager):
 
 class User(AbstractUser):
     def __str__(self):
-        return f"{self.get_full_name() or self.email} · {self.phone}"
+        return self.get_full_name() or self.email
 
     class Department(models.TextChoices):
         SALES = "sales", "Sales"
@@ -62,30 +62,72 @@ class User(AbstractUser):
     phone_e164 = models.CharField(max_length=16, unique=True, null=True, blank=True)
     quotation_code = models.CharField(max_length=30, blank=True, null=True)
     department = models.CharField(
-        max_length=20, choices=Department.choices, default=Department.SALES
+        max_length=20, choices=Department.choices, default=Department.ADMIN
     )
     platform_admin = models.BooleanField(default=False)
     platform_sales_rep = models.BooleanField(default=False)
+
+    class PlatformRole(models.TextChoices):
+        OWNER = "owner", "Platform Owner (Super Admin)"
+        SALES = "sales", "Platform Sales"
+        DEVELOPER = "developer", "Platform Developer"
+
+    platform_role = models.CharField(
+        max_length=20,
+        choices=PlatformRole.choices,
+        null=True,
+        blank=True,
+        help_text="Role on the SaaS provider side (Owner/Sales/Developer)",
+    )
+
+    @property
+    def is_platform_owner_role(self):
+        return bool(self.is_superuser or self.platform_admin or self.platform_role == self.PlatformRole.OWNER)
+
+    @property
+    def is_platform_sales_role(self):
+        return bool(self.is_platform_owner_role or self.platform_sales_rep or self.platform_role == self.PlatformRole.SALES)
+
+    @property
+    def is_platform_dev_role(self):
+        return bool(self.is_platform_owner_role or self.platform_role == self.PlatformRole.DEVELOPER)
+
+    @property
+    def is_platform_staff(self):
+        return bool(self.is_platform_owner_role or self.is_platform_sales_role or self.is_platform_dev_role or self.is_staff)
     phone_verified_at = models.DateTimeField(null=True, blank=True)
+
+    # Google Sign-In identity anchor.
+    # Immutable unique identifier from Google OAuth2 token (sub claim).
+    google_sub = models.CharField(
+        max_length=128,
+        unique=True,
+        null=True,
+        blank=True,
+        db_index=True,
+        help_text="Google OAuth2 subject identifier (sub claim). Immutable once set.",
+    )
 
     @property
     def is_sales_rep(self):
         return self.platform_sales_rep or self.department == self.Department.SALES or self.platform_admin or self.is_superuser
 
     USERNAME_FIELD = "email"
-    REQUIRED_FIELDS = ["phone"]
+    REQUIRED_FIELDS = []
     objects = UserManager()
 
     def save(self, *args, **kwargs):
         if not self.username:
             self.username = self.email
-        digits = "".join(ch for ch in (self.phone or "") if ch.isdigit())
-        if self.phone.startswith("+") and 8 <= len(digits) <= 15:
-            self.phone_e164 = "+" + digits
-        elif len(digits) == 10:
-            self.phone_e164 = "+91" + digits
-        elif digits:
-            self.phone_e164 = "+" + digits
+        # Only process phone_e164 when a phone number is present.
+        if self.phone:
+            digits = "".join(ch for ch in self.phone if ch.isdigit())
+            if self.phone.startswith("+") and 8 <= len(digits) <= 15:
+                self.phone_e164 = "+" + digits
+            elif len(digits) == 10:
+                self.phone_e164 = "+91" + digits
+            elif digits:
+                self.phone_e164 = "+" + digits
         super().save(*args, **kwargs)
 
 
@@ -95,6 +137,20 @@ class TimeStampedModel(models.Model):
 
     class Meta:
         abstract = True
+
+class UserGoogleCredential(TimeStampedModel):
+    user = models.OneToOneField(
+        User, related_name="google_credential", on_delete=models.CASCADE
+    )
+    access_token = models.TextField(blank=True, default="")
+    refresh_token = models.TextField(blank=True, default="")
+    scopes = models.JSONField(default=list, blank=True)
+    can_send_mail = models.BooleanField(default=True)
+    granted_at = models.DateTimeField(null=True, blank=True)
+
+    def __str__(self):
+        return f"Google Credential for {self.user.email}"
+
 
 
 class SubscriptionPlan(TimeStampedModel):
@@ -335,6 +391,27 @@ class UserRole(TimeStampedModel):
             (self.valid_from is None or self.valid_from <= at)
             and (self.valid_to is None or self.valid_to >= at)
         )
+
+
+
+class OrganizationInvitation(TimeStampedModel):
+    tenant = models.ForeignKey(Tenant, related_name="invitations", on_delete=models.CASCADE)
+    invited_email = models.EmailField()
+    role = models.ForeignKey(Role, null=True, blank=True, related_name="invitations", on_delete=models.SET_NULL)
+    invited_by = models.ForeignKey(User, null=True, blank=True, related_name="sent_invitations", on_delete=models.SET_NULL)
+    token = models.CharField(max_length=128, unique=True, db_index=True)
+    expires_at = models.DateTimeField()
+    accepted_at = models.DateTimeField(null=True, blank=True)
+    accepted_by = models.ForeignKey(User, null=True, blank=True, related_name="accepted_invitations", on_delete=models.SET_NULL)
+
+    def __str__(self):
+        return f"Invitation for {self.invited_email} to {self.tenant.name}"
+
+    class Meta:
+        indexes = [
+            models.Index(fields=["tenant", "accepted_at", "expires_at"]),
+            models.Index(fields=["token"]),
+        ]
 
 
 class AuditLog(models.Model):

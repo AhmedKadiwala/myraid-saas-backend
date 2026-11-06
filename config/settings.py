@@ -73,6 +73,7 @@ INSTALLED_APPS = [
 
     "apps.core",
     "apps.erp",
+    "apps.inventory",
     "apps.reference_erp",
 ]
 
@@ -84,6 +85,7 @@ MIDDLEWARE = [
     "whitenoise.middleware.WhiteNoiseMiddleware",
 
     "corsheaders.middleware.CorsMiddleware",
+    "apps.core.performance.AdaptiveBackpressureMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
@@ -119,9 +121,13 @@ ASGI_APPLICATION = "config.asgi.application"
 DATABASES = {
     "default": dj_database_url.config(
         default=f"sqlite:///{BASE_DIR / 'db.sqlite3'}",
-        conn_max_age=60,
+        conn_max_age=int(os.getenv("DATABASE_CONN_MAX_AGE", "0")),
     )
 }
+
+# Step 5.1: PgBouncer transaction pooling optimization
+if DATABASES["default"].get("ENGINE") == "django.db.backends.postgresql":
+    DATABASES["default"]["DISABLE_SERVER_SIDE_CURSORS"] = True
 
 
 AUTH_USER_MODEL = "core.User"
@@ -248,6 +254,12 @@ REST_FRAMEWORK = {
 
     "DEFAULT_PERMISSION_CLASSES": (
         "apps.core.permissions.TenantRBACPermission",
+    ),
+
+    "DEFAULT_RENDERER_CLASSES": (
+        "apps.core.performance.OrjsonRenderer",
+        "rest_framework.renderers.JSONRenderer",
+        "rest_framework.renderers.BrowsableAPIRenderer",
     ),
 
     "DEFAULT_SCHEMA_CLASS": (
@@ -385,6 +397,14 @@ EMAIL_HOST_PASSWORD = os.getenv("EMAIL_HOST_PASSWORD", "")
 EMAIL_USE_TLS = os.getenv("EMAIL_USE_TLS", "0" if DEBUG else "1") == "1"
 EMAIL_USE_SSL = os.getenv("EMAIL_USE_SSL", "0") == "1"
 
+# -------------------------------------------------------------------
+# GOOGLE SIGN-IN / OAUTH 2.0
+# -------------------------------------------------------------------
+
+GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID", "")
+INVITATION_EXPIRY_DAYS = int(os.getenv("INVITATION_EXPIRY_DAYS", "7"))
+
+
 
 # -------------------------------------------------------------------
 # ERP SETTINGS
@@ -495,6 +515,11 @@ ERP_ENCRYPTION_KEYS = [
 # STORAGE / CLOUDFLARE R2 / S3
 # -------------------------------------------------------------------
 
+CLOUDFLARE_ACCOUNT_ID = os.getenv("CLOUDFLARE_ACCOUNT_ID", "")
+R2_ACCESS_KEY_ID = os.getenv("R2_ACCESS_KEY_ID", os.getenv("AWS_ACCESS_KEY_ID", ""))
+R2_SECRET_ACCESS_KEY = os.getenv("R2_SECRET_ACCESS_KEY", os.getenv("AWS_SECRET_ACCESS_KEY", ""))
+R2_BUCKET_NAME = os.getenv("R2_BUCKET_NAME", os.getenv("AWS_STORAGE_BUCKET_NAME", "myraid"))
+
 STORAGE_BACKEND = os.getenv(
     "STORAGE_BACKEND",
     "local",
@@ -598,3 +623,5 @@ SECURE_SSL_REDIRECT = (
     )
     == "1"
 )
+
+SILENCED_SYSTEM_CHECKS = ["models.W040"]

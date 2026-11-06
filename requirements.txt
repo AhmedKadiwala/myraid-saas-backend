@@ -11,8 +11,12 @@ django-celery-beat==2.8.1
 redis==5.2.1
 razorpay==1.4.2
 boto3==1.39.12
+granian==2.8.7
+orjson==3.13.0
 gunicorn==23.0.0
 whitenoise==6.9.0
 reportlab==4.5.1
 openpyxl==3.1.5
 cryptography==50.0.1
+setuptools<70
+google-auth==2.62.1

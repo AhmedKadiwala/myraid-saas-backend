@@ -1,19 +1,30 @@
 from django.urls import path
 
-from . import auth_views, crm_views, rbac_views, tenant_views
+from . import auth_views, crm_views, google_auth, onboard_views, platform_views, rbac_views, tenant_views
 
 urlpatterns = [
+    # Google Identity Services / Authentication & Razorpay Onboard
+    path("auth/google/signin", google_auth.GoogleSignInView.as_view()),
+    path("auth/google/onboard", google_auth.GoogleOnboardView.as_view()),
+    path("auth/google/mail-token", onboard_views.GoogleMailAuthorizeView.as_view()),
+    path("auth/onboard/razorpay/order", onboard_views.RazorpayOnboardOrderView.as_view()),
+    path("auth/onboard/razorpay/verify", onboard_views.RazorpayOnboardVerifyView.as_view()),
+    path("auth/invitations", google_auth.OrganizationInvitationView.as_view()),
+    path("auth/invitations/", google_auth.OrganizationInvitationView.as_view()),
+    path("auth/invitations/<str:token>", google_auth.OrganizationInvitationView.as_view()),
+    path("auth/invitations/<str:token>/", google_auth.OrganizationInvitationView.as_view()),
+    path("auth/invitations/<str:token>/accept", google_auth.OrganizationInvitationView.as_view()),
+    path("auth/invitations/<str:token>/accept/", google_auth.OrganizationInvitationView.as_view()),
+
     # Authentication / Simple JWT
     path("auth/login", auth_views.LoginView.as_view()),
     path("auth/refresh", auth_views.RefreshView.as_view()),
     path("auth/logout", auth_views.LogoutView.as_view()),
-    path("auth/signup", auth_views.SignupView.as_view()),
     path("auth/user-info", auth_views.UserInfoView.as_view()),
     path("auth/edit-user/<int:user_id>", auth_views.EditUserView.as_view()),
-    path("auth/change-password", auth_views.ChangePasswordView.as_view()),
-    path("auth/password-reset/request", auth_views.RequestPasswordResetView.as_view()),
-    path("auth/password-reset/confirm", auth_views.ConfirmPasswordResetView.as_view()),
-    path("auth/reset-password/<int:user_id>", auth_views.ResetPasswordView.as_view()),
+    path("platform/overview", platform_views.PlatformOverviewView.as_view()),
+    path("platform/staff", platform_views.PlatformStaffManageView.as_view()),
+    path("platform/subscriptions/action", platform_views.PlatformSubscriptionActionView.as_view()),
 
     # Tenant SaaS surface
     path("tenants/me", tenant_views.CurrentTenantView.as_view()),

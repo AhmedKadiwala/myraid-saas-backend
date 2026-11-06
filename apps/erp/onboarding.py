@@ -20,22 +20,46 @@ from .otp import normalize_phone
 
 
 def install_permission_catalog():
-    result=[]
-    for group,actions in PERMISSIONS.items():
+    existing = list(BusinessPermission.objects.filter(is_active=True))
+    if existing:
+        return existing
+    to_create = []
+    codes = set()
+    for group, actions in PERMISSIONS.items():
         for action in actions:
-            code=f"{group}.{action}";permission,_=BusinessPermission.objects.get_or_create(code=code,defaults={"name":code.replace("."," ").title(),"module":group});result.append(permission)
-    for group,codes in SALES_PERMISSIONS.items():
-        for code in codes:
-            permission,_=BusinessPermission.objects.get_or_create(code=code,defaults={"name":code.replace("."," ").title(),"module":group});result.append(permission)
-    return result
+            code = f"{group}.{action}"
+            if code not in codes:
+                codes.add(code)
+                to_create.append(BusinessPermission(code=code, name=code.replace(".", " ").title(), module=group))
+    for group, action_codes in SALES_PERMISSIONS.items():
+        for code in action_codes:
+            if code not in codes:
+                codes.add(code)
+                to_create.append(BusinessPermission(code=code, name=code.replace(".", " ").title(), module=group))
+    BusinessPermission.objects.bulk_create(to_create, ignore_conflicts=True)
+    return list(BusinessPermission.objects.filter(is_active=True))
 
 
-def owner_role(tenant,user):
-    role,_=Role.objects.get_or_create(tenant=tenant,code="tenant-admin",defaults={"name":"ERP Owner","is_system":True})
-    for permission in install_permission_catalog():RolePermission.objects.get_or_create(role=role,permission=permission)
-    UserRole.objects.filter(tenant=tenant,user=user,is_active=True).exclude(role=role).update(is_active=False)
-    assignment,_=UserRole.objects.get_or_create(tenant=tenant,user=user,role=role,branch=None,defaults={"assigned_by":user})
-    if not assignment.is_active:assignment.is_active=True;assignment.save(update_fields=["is_active","updated_at"])
+def owner_role(tenant, user):
+    role, _ = Role.objects.get_or_create(
+        tenant=tenant, code="tenant-admin", defaults={"name": "ERP Owner", "is_system": True}
+    )
+    permissions = install_permission_catalog()
+    existing_ids = set(role.permission_links.values_list("permission_id", flat=True))
+    new_links = [
+        RolePermission(role=role, permission=p)
+        for p in permissions
+        if p.id not in existing_ids
+    ]
+    if new_links:
+        RolePermission.objects.bulk_create(new_links, ignore_conflicts=True)
+    UserRole.objects.filter(tenant=tenant, user=user, is_active=True).exclude(role=role).update(is_active=False)
+    assignment, _ = UserRole.objects.get_or_create(
+        tenant=tenant, user=user, role=role, branch=None, defaults={"assigned_by": user}
+    )
+    if not assignment.is_active:
+        assignment.is_active = True
+        assignment.save(update_fields=["is_active", "updated_at"])
 
 
 def create_company_workspace(user,company_name,selected):

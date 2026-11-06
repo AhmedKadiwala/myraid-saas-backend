@@ -60,6 +60,10 @@ class LoginView(APIView):
             "refresh": str(refresh),
             "userData": {
                 "platform_admin": bool(user.platform_admin or user.is_superuser),
+                "is_superuser": bool(user.is_superuser),
+                "is_staff": bool(user.is_staff),
+                "platform_role": user.platform_role or ("owner" if user.is_superuser else None),
+                "is_platform_staff": bool(getattr(user, "is_platform_staff", user.is_staff or user.is_superuser)),
                 "department": user.department,
                 "name": user.get_full_name(),
                 "email": user.email if not user.email.endswith(".myraid.invalid") else "",

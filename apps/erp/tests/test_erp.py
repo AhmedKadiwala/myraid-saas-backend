@@ -310,70 +310,12 @@ class PhoneOTPTestCase(TestCase):
         self.user=User.objects.create_user(email="internal@phone.myraid.invalid",phone="9876543210",password=None,first_name="Multi Role")
         TenantMembership.objects.create(tenant=self.tenant,user=self.user,default_branch=self.branch1)
 
-    def test_otp_request_requires_phone_body(self):
-        api=APIClient()
-        request=api.post("/api/v1/erp/auth/otp/request-otp/",{},format="json")
-        self.assertEqual(request.status_code,400,request.data)
-        self.assertIn("phone",request.data["error"])
-        self.assertFalse(m.LoginOTP.objects.exists())
-
-    @override_settings(ERP_SMS_ENABLED=True,DEBUG=True,MSG91_AUTH_KEY="")
-    def test_otp_request_response_does_not_reveal_unknown_phone(self):
-        api=APIClient()
-        known=api.post("/api/v1/erp/auth/otp/request-otp/",{"phone":"9876543210"},format="json")
-        unknown=api.post("/api/v1/erp/auth/otp/request-otp/",{"phone":"9999999999"},format="json")
-        self.assertEqual(known.status_code,200,known.data)
-        self.assertEqual(unknown.status_code,200,unknown.data)
-        self.assertEqual(known.data["message"],unknown.data["message"])
-        self.assertIn("otp_token",known.data);self.assertIn("otp_token",unknown.data)
-        self.assertNotEqual(known.data["otp_token"],unknown.data["otp_token"])
-
-    def test_otp_verify_requires_phone_code_and_token_body(self):
-        api=APIClient()
-        missing_all=api.post("/api/v1/erp/auth/otp/verify-otp/",{},format="json")
-        self.assertEqual(missing_all.status_code,400,missing_all.data)
-        self.assertIn("phone",missing_all.data["error"])
-        self.assertIn("code",missing_all.data["error"])
-        self.assertIn("otp_token",missing_all.data["error"])
-        missing_code=api.post("/api/v1/erp/auth/otp/verify-otp/",{"phone":"+919876543210","otp_token":"request-token"},format="json")
-        self.assertEqual(missing_code.status_code,400,missing_code.data)
-        self.assertIn("code",missing_code.data["error"])
-        missing_token=api.post("/api/v1/erp/auth/otp/verify-otp/",{"phone":"+919876543210","code":"654321"},format="json")
-        self.assertEqual(missing_token.status_code,400,missing_token.data)
-        self.assertIn("otp_token",missing_token.data["error"])
-
-    def test_otp_schema_documents_request_bodies(self):
-        api=APIClient()
-        schema=api.get("/api/schema/").data
-        request_body=schema["paths"]["/api/v1/erp/auth/otp/request-otp/"]["post"]["requestBody"]
-        verify_body=schema["paths"]["/api/v1/erp/auth/otp/verify-otp/"]["post"]["requestBody"]
-        self.assertIn("application/json",request_body["content"])
-        self.assertIn("application/json",verify_body["content"])
-        self.assertEqual(schema["components"]["schemas"]["OTPRequest"]["required"],["phone"])
-        self.assertEqual(set(schema["components"]["schemas"]["OTPVerify"]["required"]),{"phone","code","otp_token"})
-        self.assertIn("otp_token",schema["components"]["schemas"]["OTPRequestResponse"]["properties"])
-
-    @override_settings(ERP_SMS_ENABLED=True,DEBUG=True,MSG91_AUTH_KEY="")
-    @patch("apps.erp.otp.secrets.randbelow",return_value=654321)
-    def test_phone_otp_is_hashed_single_use_and_sets_session(self,_random):
-        api=APIClient();request=api.post("/api/v1/erp/auth/otp/request-otp/",{"phone":"98765 43210"},format="json")
-        self.assertEqual(request.status_code,200,request.data);otp=m.LoginOTP.objects.get();self.assertNotIn("654321",otp.code_hash);self.assertTrue(check_password("654321",otp.code_hash))
-        self.assertIn("otp_token",request.data);self.assertNotEqual(request.data["otp_token"],"654321")
-        bad=api.post("/api/v1/erp/auth/otp/verify-otp/",{"phone":"+919876543210","code":"000000","otp_token":request.data["otp_token"]},format="json");self.assertEqual(bad.status_code,400)
-        wrong_token=api.post("/api/v1/erp/auth/otp/verify-otp/",{"phone":"+919876543210","code":"654321","otp_token":"wrong-token"},format="json");self.assertEqual(wrong_token.status_code,400)
-        verified=api.post("/api/v1/erp/auth/otp/verify-otp/",{"phone":"+919876543210","code":"654321","otp_token":request.data["otp_token"]},format="json");self.assertEqual(verified.status_code,200,verified.data);self.assertIn("access_token",verified.cookies)
-        self.assertIn("access",verified.data);self.assertIn("refresh",verified.data)
-        reused=api.post("/api/v1/erp/auth/otp/verify-otp/",{"phone":"+919876543210","code":"654321","otp_token":request.data["otp_token"]},format="json");self.assertEqual(reused.status_code,400)
-
-    @override_settings(ERP_SMS_ENABLED=True,DEBUG=True,MSG91_AUTH_KEY="")
-    @patch("apps.erp.otp.secrets.randbelow",return_value=654321)
-    def test_phone_otp_failed_verification_rate_limit(self,_random):
-        api=APIClient();request=api.post("/api/v1/erp/auth/otp/request-otp/",{"phone":"9876543210"},format="json")
-        payload={"phone":"+919876543210","code":"000000","otp_token":request.data["otp_token"]}
-        for _ in range(5):
-            self.assertEqual(api.post("/api/v1/erp/auth/otp/verify-otp/",payload,format="json").status_code,400)
-        locked=api.post("/api/v1/erp/auth/otp/verify-otp/",payload,format="json")
-        self.assertEqual(locked.status_code,429,locked.data)
+    def test_legacy_otp_endpoints_are_removed(self):
+        api = APIClient()
+        r1 = api.post('/api/v1/erp/auth/otp/request-otp/', {'phone': '9876543210'}, format='json')
+        self.assertEqual(r1.status_code, 404)
+        r2 = api.post('/api/v1/erp/auth/otp/verify-otp/', {'phone': '9876543210', 'code': '123456'}, format='json')
+        self.assertEqual(r2.status_code, 404)
 
     def test_same_phone_user_has_different_role_in_different_companies(self):
         for code,module in [("workspace.view","workspace"),("item.view","item"),("payment.record","payment")]:

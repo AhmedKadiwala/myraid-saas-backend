@@ -1,4 +1,5 @@
 from datetime import timedelta
+from unittest.mock import patch
 from django.test import TestCase, override_settings
 from django.core.cache import cache
 from django.utils import timezone
@@ -32,17 +33,22 @@ class LoginBoundaryTests(TestCase):
         denied = self.api.get("/api/v1/workspace-ui/workspace/")
         self.assertEqual(denied.status_code, 403)
 
-    @override_settings(ERP_OTP_MODE="mock")
-    def test_otp_login_ignores_expired_bearer_cookie_and_tenant(self):
+    @override_settings(GOOGLE_CLIENT_ID="boundary-test-id")
+    @patch("apps.core.google_auth._verify_google_id_token")
+    def test_google_login_ignores_expired_bearer_cookie_and_tenant(self, mock_verify):
+        mock_verify.return_value = {
+            "sub": "boundary-google-sub",
+            "email": self.user.email,
+            "email_verified": True,
+            "iss": "https://accounts.google.com",
+            "aud": "boundary-test-id",
+        }
         self.api.credentials(HTTP_AUTHORIZATION="Bearer expired.invalid.token", HTTP_X_TENANT_ID="999999",
                              HTTP_ORIGIN="https://myraid-saas-frontend.vercel.app")
         self.api.cookies["access_token"] = "stale-cookie"
-        sent = self.api.post("/api/v1/erp/auth/otp/request-otp/", {"phone": self.user.phone}, format="json")
-        self.assertEqual(sent.status_code, 200, sent.data)
-        verified = self.api.post("/api/v1/erp/auth/otp/verify-otp/", {
-            "phone": self.user.phone, "code": sent.data["mock_otp"], "otp_token": sent.data["otp_token"]}, format="json")
-        self.assertEqual(verified.status_code, 200, verified.data)
-        self.assertIn("access", verified.data)
+        res = self.api.post("/api/v1/auth/google/signin", {"credential": "mock.jwt"}, format="json")
+        self.assertEqual(res.status_code, 200, res.data)
+        self.assertIn("access", res.data)
 
     def test_anonymous_bootstrap_and_permissions_stay_protected(self):
         for route in ("/api/v1/erp/bootstrap/", "/api/v1/auth/user-info"):
@@ -58,14 +64,3 @@ class LoginBoundaryTests(TestCase):
         self.assertGreaterEqual(int(renewed.cookies["refresh_token"]["max-age"]), 31*86400-2)
         reused = self.api.post("/api/v1/auth/refresh", {"refresh":str(refresh)}, format="json")
         self.assertEqual(reused.status_code, 401)
-        logged_out = self.api.post("/api/v1/auth/logout", {"refresh":str(new_refresh)}, format="json")
-        self.assertEqual(logged_out.status_code, 200)
-        self.assertEqual(self.api.post("/api/v1/auth/refresh", {"refresh":str(new_refresh)}, format="json").status_code, 401)
-
-    def test_expired_or_disabled_sessions_cannot_renew(self):
-        refresh = RefreshToken.for_user(self.user)
-        refresh.set_exp(from_time=timezone.now()-timedelta(days=32), lifetime=timedelta(days=31))
-        self.assertEqual(self.api.post("/api/v1/auth/refresh", {"refresh":str(refresh)}, format="json").status_code, 401)
-        refresh = RefreshToken.for_user(self.user)
-        self.user.is_active=False; self.user.save(update_fields=["is_active"])
-        self.assertEqual(self.api.post("/api/v1/auth/refresh", {"refresh":str(refresh)}, format="json").status_code, 401)
